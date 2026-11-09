@@ -9,17 +9,17 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from queuify.agent import memory
-from queuify.domain import pending
-from queuify.swiggy.names import short_name
-from queuify.domain.queue import QueueError, item_label, log_event, name_of, now_iso, owner_names, rupees
-from queuify.swiggy.names import short_name
-from queuify.domain.queue import _bump_version as bump_version
-from queuify.store import db
-from queuify.swiggy import cart
-from queuify.swiggy.errors import SwiggyToolError
-from queuify.swiggy.client import SwiggyClient
-from queuify.telegram.outbox import Buttons, Outbox
+from cartmates.agent import memory
+from cartmates.domain import pending
+from cartmates.swiggy.names import short_name
+from cartmates.domain.queue import QueueError, item_label, log_event, name_of, now_iso, owner_names, rupees
+from cartmates.swiggy.names import short_name
+from cartmates.domain.queue import _bump_version as bump_version
+from cartmates.store import db
+from cartmates.swiggy import cart
+from cartmates.swiggy.errors import SwiggyToolError
+from cartmates.swiggy.client import SwiggyClient
+from cartmates.telegram.outbox import Buttons, Outbox
 
 log = logging.getLogger(__name__)
 

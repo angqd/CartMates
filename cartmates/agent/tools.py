@@ -6,14 +6,14 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 
-from queuify import tracing
-from queuify.domain import orders, pending, queue
-from queuify.domain.queue import QueueError, rupees
-from queuify.store import db
-from queuify.swiggy import catalog
-from queuify.swiggy.names import short_name
-from queuify.swiggy.errors import SwiggyToolError, SwiggyUnavailable
-from queuify.telegram.outbox import Mention, Outbox
+from cartmates import tracing
+from cartmates.domain import orders, pending, queue
+from cartmates.domain.queue import QueueError, rupees
+from cartmates.store import db
+from cartmates.swiggy import catalog
+from cartmates.swiggy.names import short_name
+from cartmates.swiggy.errors import SwiggyToolError, SwiggyUnavailable
+from cartmates.telegram.outbox import Mention, Outbox
 
 log = logging.getLogger(__name__)
 
@@ -126,7 +126,7 @@ class Toolbox:
             result = await self._run(name, raw_arguments)
             tracing.set_text(sp, "output.value", result)
             if result.startswith("error:"):
-                sp.set_attribute("queuify.tool_error", True)
+                sp.set_attribute("cartmates.tool_error", True)
             return result
 
     async def _run(self, name: str, raw_arguments: str) -> str:

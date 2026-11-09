@@ -6,16 +6,16 @@ from datetime import datetime, timezone
 
 from telegram.error import NetworkError
 
-from queuify.agent import memory
-from queuify.agent.errors import TurnFailedAfterChanges, done_so_far
-from queuify import tracing
-from queuify.agent.llm import LLM, LLMUnavailable, traced_respond
-from queuify.agent.prompt import SYSTEM_PROMPT
-from queuify.agent.tools import SCHEMAS, Toolbox
-from queuify.domain import address
-from queuify.swiggy.errors import LoggedOut, LoggedOutAfterChanges
-from queuify.telegram.events import Message
-from queuify.telegram.outbox import Outbox
+from cartmates.agent import memory
+from cartmates.agent.errors import TurnFailedAfterChanges, done_so_far
+from cartmates import tracing
+from cartmates.agent.llm import LLM, LLMUnavailable, traced_respond
+from cartmates.agent.prompt import SYSTEM_PROMPT
+from cartmates.agent.tools import SCHEMAS, Toolbox
+from cartmates.domain import address
+from cartmates.swiggy.errors import LoggedOut, LoggedOutAfterChanges
+from cartmates.telegram.events import Message
+from cartmates.telegram.outbox import Outbox
 
 log = logging.getLogger(__name__)
 
@@ -182,6 +182,6 @@ def _remember_failure(conn: sqlite3.Connection, actions: list[str], speaker: str
 
 
 def _summarize(sp, rounds: int, called: list[str], tokens_in: int, tokens_out: int, outcome: str) -> None:
-    sp.set_attributes({"queuify.rounds": rounds, "queuify.tools": ",".join(called) or "-",
-                       "queuify.outcome": outcome, "llm.token_count.prompt": tokens_in,
+    sp.set_attributes({"cartmates.rounds": rounds, "cartmates.tools": ",".join(called) or "-",
+                       "cartmates.outcome": outcome, "llm.token_count.prompt": tokens_in,
                        "llm.token_count.completion": tokens_out, "llm.token_count.total": tokens_in + tokens_out})

@@ -1,12 +1,14 @@
-# Queuify v1: design and scaffold
+# CartMates: design
 
-Status: draft for review. No code has been written against this yet.
-Inputs: the Instamart MCP POC (`instamart_poc/FINDINGS.md`) and the design Q&A of 2026-10-28.
+Forked from Queuify (single-household v1, github.com/angqd/Queuify @ 5c1d8db) on 2026-11-09. Sections 1-16 describe that
+v1 design, which CartMates starts from. The multi-household design will be added as a v2 section; the agreed
+decisions are in reference/MULTI_HOUSEHOLD_DECISIONS.md (gitignored).
+Inputs: the Instamart MCP POC (notes copied to `reference/SWIGGY_MCP_FINDINGS.md`) and the design Q&A of 2026-10-28.
 
 ## 1. What it is
 
 A Telegram bot that one household of roommates shares, inside their group chat. Roommates ask for
-groceries in natural language ("@queuify need eggs and the usual milk"). The bot keeps a shared
+groceries in natural language ("@cartmates need eggs and the usual milk"). The bot keeps a shared
 **queue**: a synthetic cart that lives in the bot, not in Swiggy. When someone wants to order, the bot
 builds the real Instamart cart, shows the bill, and places a **cash-on-delivery** order after a Confirm tap.
 It records who asked for what, so the person who paid knows who owes them what.
@@ -85,7 +87,7 @@ in its tool list.
 ## 5. Main flows
 
 ### 5.1 Add an item
-1. "@queuify 2 amul taaza 1L for me and rohan"
+1. "@cartmates 2 amul taaza 1L for me and rohan"
 2. The agent calls `search_catalog("amul taaza 1L")`. The bot's own address is used; the LLM never chooses one.
 3. One clear match: `add_to_queue(spinId, skuId, qty=2, owners=[me, rohan])`. The bot replies with the item,
    its estimated price and the new queue total.
@@ -121,8 +123,8 @@ One turn handles every item; asking a question does not end it.
 The queue stores the original wording too, so an item can be re-resolved later if its variant disappears.
 
 ### 5.2 Order now
-- "@queuify order now" calls `propose_order(scope="all")`.
-- "@queuify I want eggs now": the agent adds the eggs, then calls `propose_order(scope="ask", focus=item)`. The bot
+- "@cartmates order now" calls `propose_order(scope="all")`.
+- "@cartmates I want eggs now": the agent adds the eggs, then calls `propose_order(scope="ask", focus=item)`. The bot
   posts two buttons, each with its estimated total: *Just your eggs* and *Whole queue*.
 - "Just mine" means only that user's items. Everything else stays queued.
 - The proposal produces a **bill card** using a live quote (section 7, step 2): items, owners, Swiggy's
@@ -585,8 +587,8 @@ SWIGGY_ADDRESS_ID=            # full id from get_addresses, e.g. d9lg...__AMVY..
 FREE_DELIVERY_MIN=199         # approximate; the live check decides
 CHECKOUT_TIMEOUT_S=45         # hard cap on one checkout call (section 7.4)
 OTEL_EXPORTER_OTLP_ENDPOINT=  # e.g. http://phoenix:6006; empty = tracing off (section 16)
-QUEUIFY_TRACE_CONTENT=1       # 0 = no prompts, tool args/results or message text in spans
-QUEUIFY_TRACE_MAX_CHARS=8000  # cap per text attribute
+CARTMATES_TRACE_CONTENT=1       # 0 = no prompts, tool args/results or message text in spans
+CARTMATES_TRACE_MAX_CHARS=8000  # cap per text attribute
 PRICE_TOLERANCE=0.05
 UPI_APP=gpay://upi/          # UPI app for the Pay button (section 7.3)
 DATA_DIR=/data                # SQLite file + tokens (Docker volume)
@@ -596,7 +598,7 @@ LOG_LEVEL=INFO
 ## 12. Scaffold
 
 ```
-queuify/
+cartmates/
   __main__.py            # boot: config, DB migrate, recover stuck orders, start the lane and Telegram
   config.py
   lane.py                # household FIFO worker
@@ -714,13 +716,13 @@ Agreed on 2026-11-05: finish the milestones first, then trace. Built in M7 (not 
 
 ### 16.1 What was built
 
-- **Instrumentation:** OpenTelemetry, spans written by hand in `queuify/tracing.py`. The HTTP libraries are **not**
+- **Instrumentation:** OpenTelemetry, spans written by hand in `cartmates/tracing.py`. The HTTP libraries are **not**
   auto-instrumented (Telegram URLs contain the bot token), and no OpenInference auto-instrumentors are used. Only
   `openinference-semantic-conventions` is used, for attribute names, so Phoenix renders the spans properly.
-- **Backend:** Arize Phoenix, a second compose service with its UI at `localhost:6006`. Traces stay on this machine.
+- **Backend:** Arize Phoenix, a second compose service with its UI at `localhost:6007` (host port; Queuify uses 6006). Traces stay on this machine.
   Switching backends only means changing `OTEL_EXPORTER_OTLP_ENDPOINT`.
-- **Off by default:** `tracing.setup(config)` installs a TracerProvider (resource `service.name=queuify`, plus
-  `openinference.project.name=queuify`) with a BatchSpanProcessor and the OTLP/HTTP exporter only when the endpoint is
+- **Off by default:** `tracing.setup(config)` installs a TracerProvider (resource `service.name=cartmates`, plus
+  `openinference.project.name=cartmates`) with a BatchSpanProcessor and the OTLP/HTTP exporter only when the endpoint is
   set. Otherwise the no-op provider stays and tests need no collector. `tracing.shutdown()` flushes on clean exit.
 - **Endpoint:** `OTEL_EXPORTER_OTLP_ENDPOINT` is the base URL (`http://phoenix:6006`); the exporter posts to
   `<endpoint>/v1/traces` (added by us, unless it is already there).
@@ -729,8 +731,8 @@ Agreed on 2026-11-05: finish the milestones first, then trace. Built in M7 (not 
 | Variable | Default | Meaning |
 |---|---|---|
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | OTLP/HTTP base URL; unset means tracing is off |
-| `QUEUIFY_TRACE_CONTENT` | `1` | `0` records no prompts, tool args or results, message text or reply text |
-| `QUEUIFY_TRACE_MAX_CHARS` | `8000` | Text attributes are cut to this, ending in `…[truncated N chars]` |
+| `CARTMATES_TRACE_CONTENT` | `1` | `0` records no prompts, tool args or results, message text or reply text |
+| `CARTMATES_TRACE_MAX_CHARS` | `8000` | Text attributes are cut to this, ending in `…[truncated N chars]` |
 
 - **Never in spans:** Authorization headers, OAuth codes, the pasted login URL or text, token files, the bot token.
   The lane skips the text of any message the paste detection (`observe.looks_like_paste`, shared with the handlers)
@@ -757,18 +759,18 @@ The hourly cleanup is a lane event, so it is a normal `event:CleanupPending` roo
 
 ### 16.3 Attributes
 
-- **Root:** `session.id` (Telegram chat id, so Phoenix groups a chat's turns), `user.id`, `queuify.chat_id`,
-  `queuify.command`, `queuify.callback_data` (taps), `queuify.turn_id`, `input.value` (message text, content capture on
-  and not a paste), `queuify.redacted` (a paste). Failures: exception event and ERROR status.
-- **agent.turn:** `queuify.rounds`, `queuify.tools`, `queuify.outcome`, `llm.token_count.prompt|completion|total`,
+- **Root:** `session.id` (Telegram chat id, so Phoenix groups a chat's turns), `user.id`, `cartmates.chat_id`,
+  `cartmates.command`, `cartmates.callback_data` (taps), `cartmates.turn_id`, `input.value` (message text, content capture on
+  and not a paste), `cartmates.redacted` (a paste). Failures: exception event and ERROR status.
+- **agent.turn:** `cartmates.rounds`, `cartmates.tools`, `cartmates.outcome`, `llm.token_count.prompt|completion|total`,
   `input.value`, `output.value`. Mirrors the INFO summary line.
 - **llm.chat:** `llm.model_name`, `llm.input_messages.N.message.role|content`,
   `llm.output_messages.0.message.content` and `...tool_calls.N.tool_call.function.name|arguments`, token counts.
-- **tool:\<name>:** `tool.name`, `tool.parameters` (the raw JSON), `output.value`, `queuify.tool_error`.
+- **tool:\<name>:** `tool.name`, `tool.parameters` (the raw JSON), `output.value`, `cartmates.tool_error`.
 - **swiggy:\<tool>:** `swiggy.tool`, `input.value` (args), `output.value` (result), `swiggy.status` (`ok` or the
   exception type), `swiggy.result_chars`; span events `token_refresh` and `rate_limited`. Checkout, confirm_order and
   payment calls are traced like the rest.
-- **order.confirm:** `queuify.order_id`, `queuify.payment_method`, `user.id`, `session.id`. Span events: `claimed`,
+- **order.confirm:** `cartmates.order_id`, `cartmates.payment_method`, `user.id`, `session.id`. Span events: `claimed`,
   `quoting`, `checking_out`, `placed`, `unknown`, `failed`, `superseded`, and for UPI `pay_link_sent`,
   `payment_status`, `paid`, `window_closed`.
 - **telegram.send / telegram.edit:** `session.id`, `telegram.text_length`, `output.value` (text, content capture on).
@@ -776,16 +778,16 @@ The hourly cleanup is a lane event, so it is a normal `event:CleanupPending` roo
 ### 16.4 Trace ids in the database and logs
 
 - `events.trace_id` (migration 005; migration 006 is the reply threading above) holds the 32 hex chars of the active trace, or NULL when there is no valid span.
-  `turn_id` stays alongside it (and is also `queuify.turn_id` on the root span).
+  `turn_id` stays alongside it (and is also `cartmates.turn_id` on the root span).
 - `/resolve` appends `Traces: <id>, ...` (up to three, newest first) for that order's events.
 - Log records get `%(trace_id)s`, next to `%(turn_id)s`. The log format is unchanged.
 
 ### 16.5 Your Docker checklist (not done by Claude)
 
 1. In `compose.yml`, add a `phoenix` service: image `arizephoenix/phoenix:<a specific recent version tag>`, ports
-   `6006:6006`, environment `PHOENIX_WORKING_DIR=/mnt/data`, and a named volume mounted at `/mnt/data` (declare it under
+   `6007:6006`, environment `PHOENIX_WORKING_DIR=/mnt/data`, and a named volume mounted at `/mnt/data` (declare it under
    `volumes:`).
 2. Add `OTEL_EXPORTER_OTLP_ENDPOINT=http://phoenix:6006` to `.env` (the bot service must be on the same compose network).
-3. Rebuild: `docker compose up -d --build`, then open http://localhost:6006 and look for the `queuify` project.
+3. Rebuild: `docker compose up -d --build`, then open http://localhost:6007 and look for the `cartmates` project.
 
 **Names.** Swiggy names carry marketing text. `short_name` drops everything after ` | ` and trailing parenthesised groups that read as claims (No, Not, Made with, Baked, Fried, Free). It is applied only when showing (agent view, buttons, `item_label`, cards, bills, snapshot, /list); stored names stay as Swiggy wrote them.

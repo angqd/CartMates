@@ -2,9 +2,9 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
-from queuify import observe, tracing
-from queuify.telegram.events import Event
-from queuify.telegram.outbox import Outbox
+from cartmates import observe, tracing
+from cartmates.telegram.events import Event
+from cartmates.telegram.outbox import Outbox
 
 log = logging.getLogger(__name__)
 
@@ -36,11 +36,11 @@ class Lane:
             if event is None:  # wake-up sentinel from stop()
                 break
             with tracing.event_span(event) as sp:
-                sp.set_attribute("queuify.turn_id", observe.start_turn())
+                sp.set_attribute("cartmates.turn_id", observe.start_turn())
                 text = getattr(event, "text", None)
                 paste = text is not None and observe.looks_like_paste(text)
                 if paste:
-                    sp.set_attribute("queuify.redacted", True)
+                    sp.set_attribute("cartmates.redacted", True)
                 else:
                     tracing.set_text(sp, "input.value", text)
                 try:

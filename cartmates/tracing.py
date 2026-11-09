@@ -10,8 +10,8 @@ from openinference.semconv.trace import OpenInferenceSpanKindValues as Kind, Spa
 from opentelemetry import trace
 from opentelemetry.trace import Span, Status, StatusCode
 
-from queuify import observe
-from queuify.config import Config
+from cartmates import observe
+from cartmates.config import Config
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ def setup(config: Config) -> bool:
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
     provider = TracerProvider(resource=Resource.create(
-        {"service.name": "queuify", "openinference.project.name": "queuify"}))
+        {"service.name": "cartmates", "openinference.project.name": "cartmates"}))
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=trace_url(config.otel_endpoint))))
     trace.set_tracer_provider(provider)
     _provider = provider
@@ -68,7 +68,7 @@ def shutdown() -> None:
 
 
 def _tracer() -> trace.Tracer:
-    return (_override or trace.get_tracer_provider()).get_tracer("queuify")
+    return (_override or trace.get_tracer_provider()).get_tracer("cartmates")
 
 
 # ---- attributes ----
@@ -137,14 +137,14 @@ def traced(name: str, kind: str | None = CHAIN, attrs: Callable[..., dict] | Non
 
 def event_span(event_obj):
     """The root span of one lane event."""
-    attrs: dict = {"session.id": str(event_obj.chat_id), "queuify.chat_id": event_obj.chat_id}
+    attrs: dict = {"session.id": str(event_obj.chat_id), "cartmates.chat_id": event_obj.chat_id}
     user = getattr(event_obj, "user_id", None)
     if user is not None:
         attrs["user.id"] = str(user)
     command = getattr(event_obj, "command", None)
     if command:
-        attrs["queuify.command"] = command
+        attrs["cartmates.command"] = command
     data = getattr(event_obj, "data", None)
     if data is not None:
-        attrs["queuify.callback_data"] = data
+        attrs["cartmates.callback_data"] = data
     return span(f"event:{type(event_obj).__name__}", CHAIN, attrs)

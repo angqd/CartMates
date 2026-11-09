@@ -5,15 +5,15 @@ from datetime import datetime
 import pytest
 from telegram import Bot, Update
 
-from queuify.handlers import Handlers
-from queuify.lane import Lane
-from queuify.store import db
-from queuify.telegram.adapter import TelegramAdapter
-from queuify.telegram.events import Message
-from queuify.telegram.gate import is_for_bot
-from queuify.telegram.outbox import FakeOutbox
+from cartmates.handlers import Handlers
+from cartmates.lane import Lane
+from cartmates.store import db
+from cartmates.telegram.adapter import TelegramAdapter
+from cartmates.telegram.events import Message
+from cartmates.telegram.gate import is_for_bot
+from cartmates.telegram.outbox import FakeOutbox
 
-BOT_ID, BOT_NAME, GROUP = 999, "QueuifyBot", -100123
+BOT_ID, BOT_NAME, GROUP = 999, "CartMatesBot", -100123
 BOT = Bot("123:fake-token")  # only used to build objects; never touches the network
 
 
@@ -30,7 +30,7 @@ def make_update(text, chat_id=GROUP, user_id=1, name="Priya", entities=None,
     if reply_to_bot:
         msg["reply_to_message"] = {
             "message_id": reply_to_id, "date": 0, "chat": msg["chat"],
-            "from": {"id": BOT_ID, "is_bot": True, "first_name": "Queuify"}, "text": "hi",
+            "from": {"id": BOT_ID, "is_bot": True, "first_name": "CartMates"}, "text": "hi",
         }
     return Update.de_json({"update_id": 1, "message": msg}, BOT)
 
@@ -42,15 +42,15 @@ def cmd(name):
 @pytest.mark.parametrize("text, entities, reply, expected", [
     ("/list", cmd("/list"), False, True),
     ("/LIST", cmd("/LIST"), False, True),
-    ("/list@queuifybot", cmd("/list@queuifybot"), False, True),
+    ("/list@cartmatesbot", cmd("/list@cartmatesbot"), False, True),
     ("/list@otherbot", cmd("/list@otherbot"), False, False),
     ("/list@otherbot", cmd("/list@otherbot"), True, False),
-    ("hey @QueuifyBot add milk", [{"type": "mention", "offset": 4, "length": 11}], False, True),
+    ("hey @CartMatesBot add milk", [{"type": "mention", "offset": 4, "length": 13}], False, True),
     ("hey @rohan add milk", [{"type": "mention", "offset": 4, "length": 6}], False, False),
-    ("hey @QueuifyBot_fan", [{"type": "mention", "offset": 4, "length": 15}], False, False),
+    ("hey @CartMatesBot_fan", [{"type": "mention", "offset": 4, "length": 17}], False, False),
     ("add milk", None, True, True),
     ("just chatting", None, False, False),
-    ("mail queuifybot", None, False, False),
+    ("mail cartmatesbot", None, False, False),
     ("http://localhost:8765/callback?code=abc&state=xyz", None, False, True),
     ("see http://example.com/callback?page=2", None, False, False),
 ])
@@ -190,9 +190,9 @@ def test_member_upserted_and_name_refreshed(conn):
 
 
 def test_free_text_and_unknown_command(conn):
-    mention = [{"type": "mention", "offset": 0, "length": 11}]
+    mention = [{"type": "mention", "offset": 0, "length": 13}]
     out = run_updates(conn, [
-        make_update("@QueuifyBot add milk", entities=mention),
+        make_update("@CartMatesBot add milk", entities=mention),
         make_update("/bogus", entities=cmd("/bogus")),
     ])
     assert out.sent[0].text == "The assistant isn't configured (OPENAI_API_KEY)."

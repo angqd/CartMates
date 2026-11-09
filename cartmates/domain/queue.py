@@ -7,8 +7,8 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 
-from queuify import observe
-from queuify.swiggy.names import short_name
+from cartmates import observe
+from cartmates.swiggy.names import short_name
 
 MAX_QTY = 20
 

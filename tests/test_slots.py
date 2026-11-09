@@ -2,10 +2,10 @@
 import json
 from datetime import datetime, timezone
 
-from queuify.agent import memory
-from queuify.agent.llm import LLMTurn, ScriptedLLM, ToolCall
-from queuify.domain import queue
-from queuify.store import db
+from cartmates.agent import memory
+from cartmates.agent.llm import LLMTurn, ScriptedLLM, ToolCall
+from cartmates.domain import queue
+from cartmates.store import db
 from tests.test_nudge import placed
 from tests.test_orders import PRIYA, ROHAN, Env, add, conn, run  # noqa: F401
 

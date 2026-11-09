@@ -3,9 +3,9 @@ import json
 
 import pytest
 
-from queuify.agent.llm import LLMTurn, ScriptedLLM, ToolCall
-from queuify.domain import address
-from queuify.store import db
+from cartmates.agent.llm import LLMTurn, ScriptedLLM, ToolCall
+from cartmates.domain import address
+from cartmates.store import db
 from tests.test_orders import ADDRESS, GROUP, MEERA, PRIYA, ROHAN, Env, FakeSwiggy, conn, run, seed_queue  # noqa: F401
 
 NEW = "addr2__NEWsuffix"

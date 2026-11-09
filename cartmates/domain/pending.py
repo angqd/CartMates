@@ -3,8 +3,8 @@ import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
-from queuify.domain.queue import name_of, now_iso, rupees
-from queuify.swiggy.names import button_labels
+from cartmates.domain.queue import name_of, now_iso, rupees
+from cartmates.swiggy.names import button_labels
 
 VARIANT_TTL = timedelta(minutes=30)
 PAGE_SIZE = 4

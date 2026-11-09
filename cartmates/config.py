@@ -27,7 +27,7 @@ class Config:
 
     @property
     def db_path(self) -> Path:
-        return self.data_dir / "queuify.db"
+        return self.data_dir / "cartmates.db"
 
     @property
     def tokens_dir(self) -> Path:
@@ -62,6 +62,6 @@ def load_config() -> Config:
         upi_app=os.environ.get("UPI_APP") or "gpay://upi/",
         checkout_timeout_s=float(os.environ.get("CHECKOUT_TIMEOUT_S") or 45),
         otel_endpoint=_optional("OTEL_EXPORTER_OTLP_ENDPOINT"),
-        trace_content=(os.environ.get("QUEUIFY_TRACE_CONTENT") or "1").strip().lower() not in ("0", "false", "no", "off"),
-        trace_max_chars=int(os.environ.get("QUEUIFY_TRACE_MAX_CHARS") or 8000),
+        trace_content=(os.environ.get("CARTMATES_TRACE_CONTENT") or "1").strip().lower() not in ("0", "false", "no", "off"),
+        trace_max_chars=int(os.environ.get("CARTMATES_TRACE_MAX_CHARS") or 8000),
     )

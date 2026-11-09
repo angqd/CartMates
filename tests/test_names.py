@@ -1,8 +1,8 @@
 """short_name and the button labels: table-driven, because the parsing has edge cases."""
 import pytest
 
-from queuify.domain.queue import rupees
-from queuify.swiggy.names import button_labels, short_name
+from cartmates.domain.queue import rupees
+from cartmates.swiggy.names import button_labels, short_name
 
 NAMES = [
     ("SuperYou 10g Protein Multigrain Chips - Pudina (No Palm oil, Baked not fried)",

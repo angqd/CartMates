@@ -6,7 +6,7 @@ from typing import Protocol
 
 import openai
 
-from queuify import tracing
+from cartmates import tracing
 
 log = logging.getLogger(__name__)
 

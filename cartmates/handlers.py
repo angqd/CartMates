@@ -6,24 +6,24 @@ from contextlib import nullcontext
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
-from queuify import observe
-from queuify.agent import memory
-from queuify.agent.llm import LLM
+from cartmates import observe
+from cartmates.agent import memory
+from cartmates.agent.llm import LLM
 from telegram.error import NetworkError
 
-from queuify.agent.errors import TurnFailedAfterChanges, done_so_far
-from queuify.agent.loop import run_turn
-from queuify.domain import address, group, nudge, orders, pending, queue
-from queuify.domain.orders import OrderError
-from queuify.domain.queue import QueueError
-from queuify.executor.order_executor import OrderExecutor
-from queuify.store import db
-from queuify.swiggy import catalog
-from queuify.swiggy.auth import SwiggyAuth
-from queuify.swiggy.client import SwiggyClient
-from queuify.swiggy.errors import LoggedOut, LoggedOutAfterChanges, LoginError, SwiggyToolError, SwiggyUnavailable
-from queuify.telegram.events import CallbackTap, CleanupPending, Event, Message, Recover
-from queuify.telegram.outbox import Buttons, Outbox
+from cartmates.agent.errors import TurnFailedAfterChanges, done_so_far
+from cartmates.agent.loop import run_turn
+from cartmates.domain import address, group, nudge, orders, pending, queue
+from cartmates.domain.orders import OrderError
+from cartmates.domain.queue import QueueError
+from cartmates.executor.order_executor import OrderExecutor
+from cartmates.store import db
+from cartmates.swiggy import catalog
+from cartmates.swiggy.auth import SwiggyAuth
+from cartmates.swiggy.client import SwiggyClient
+from cartmates.swiggy.errors import LoggedOut, LoggedOutAfterChanges, LoginError, SwiggyToolError, SwiggyUnavailable
+from cartmates.telegram.events import CallbackTap, CleanupPending, Event, Message, Recover
+from cartmates.telegram.outbox import Buttons, Outbox
 
 log = logging.getLogger(__name__)
 

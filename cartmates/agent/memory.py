@@ -4,10 +4,10 @@ import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
-from queuify import observe
-from queuify.domain import pending
-from queuify.swiggy.names import short_name
-from queuify.domain.queue import item_label, members, name_of, owner_names, queued_lines, queued_total_paise, rupees
+from cartmates import observe
+from cartmates.domain import pending
+from cartmates.swiggy.names import short_name
+from cartmates.domain.queue import item_label, members, name_of, owner_names, queued_lines, queued_total_paise, rupees
 
 IST = timezone(timedelta(hours=5, minutes=30))  # a fixed offset: slim Docker images ship no tz database
 WINDOW_MESSAGES = 20

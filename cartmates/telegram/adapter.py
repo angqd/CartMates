@@ -5,11 +5,11 @@ import sqlite3
 from telegram import Update
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
-from queuify.domain import group
-from queuify.lane import Lane
-from queuify.telegram.events import CallbackTap, Message
-from queuify.telegram.gate import is_for_bot, parse_command
-from queuify.telegram.outbox import Outbox
+from cartmates.domain import group
+from cartmates.lane import Lane
+from cartmates.telegram.events import CallbackTap, Message
+from cartmates.telegram.gate import is_for_bot, parse_command
+from cartmates.telegram.outbox import Outbox
 
 log = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ class TelegramAdapter:
         ))
 
     def _strip_mention(self, text: str) -> str:
-        # "@queuify_home_bot add milk" -> "add milk": the mention is addressing, not content,
+        # "@cartmates_home_bot add milk" -> "add milk": the mention is addressing, not content,
         # and keeping it would clutter the agent's transcript.
         text = re.sub(rf"@{re.escape(self.bot_username)}\b", "", text, flags=re.IGNORECASE)
         return re.sub(r"\s{2,}", " ", text).strip()

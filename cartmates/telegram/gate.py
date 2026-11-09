@@ -28,7 +28,7 @@ def is_for_bot(message: Message, bot_id: int, bot_username: str) -> bool:
     for entity in message.entities or ():
         if entity.type == MessageEntity.MENTION:
             # Compare the entity's own text: a substring search would also match
-            # "@queuify_fan" or an email address.
+            # "@cartmates_fan" or an email address.
             if message.parse_entity(entity).lower() == f"@{bot_username.lower()}":
                 return True
     if is_login_paste(message.text):

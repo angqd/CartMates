@@ -12,15 +12,15 @@ import httpx
 import httpx2
 import pytest
 
-from queuify.handlers import Handlers
-from queuify.lane import Lane
-from queuify.store import db
-from queuify.swiggy import catalog
-from queuify.swiggy.auth import REDIRECT_URI, SwiggyAuth
-from queuify.swiggy.client import REQUIRED_TOOLS, SwiggyClient
-from queuify.swiggy.errors import LoggedOut, LoginError
-from queuify.telegram.adapter import TelegramAdapter
-from queuify.telegram.outbox import FakeOutbox
+from cartmates.handlers import Handlers
+from cartmates.lane import Lane
+from cartmates.store import db
+from cartmates.swiggy import catalog
+from cartmates.swiggy.auth import REDIRECT_URI, SwiggyAuth
+from cartmates.swiggy.client import REQUIRED_TOOLS, SwiggyClient
+from cartmates.swiggy.errors import LoggedOut, LoginError
+from cartmates.telegram.adapter import TelegramAdapter
+from cartmates.telegram.outbox import FakeOutbox
 from test_telegram import BOT_ID, BOT_NAME, GROUP, cmd, make_update
 
 ADDRESS = "aaaa1111bbbb2222cccc__FAKEsuffix123"
@@ -349,14 +349,14 @@ def test_429_honors_retry_after_then_gives_up(rig):
     assert rig.sleeps == [7]
 
     rig.mcp.rate_limit_next = 5
-    from queuify.swiggy.errors import SwiggyUnavailable
+    from cartmates.swiggy.errors import SwiggyUnavailable
     with pytest.raises(SwiggyUnavailable):
         asyncio.run(rig.client.call("get_addresses", {"page": 1}))
     assert len(rig.sleeps) == 3  # two retries after the first failure
 
 
 def test_no_429_retry_when_asked_not_to(rig):
-    from queuify.swiggy.errors import SwiggyUnavailable
+    from cartmates.swiggy.errors import SwiggyUnavailable
     rig.seed()
     rig.mcp.rate_limit_next = 1
     with pytest.raises(SwiggyUnavailable):
@@ -366,7 +366,7 @@ def test_no_429_retry_when_asked_not_to(rig):
 
 def test_network_error_is_swiggy_unavailable(rig):
     rig.seed()
-    from queuify.swiggy.errors import SwiggyUnavailable
+    from cartmates.swiggy.errors import SwiggyUnavailable
 
     def boom(request):
         raise httpx2.ConnectError("down")

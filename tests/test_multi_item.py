@@ -2,8 +2,8 @@
 one, reports what it couldn't find, and ends with one summary. Scripted LLM, fake Swiggy, FakeOutbox."""
 import json
 
-from queuify.agent.llm import LLMTurn
-from queuify.agent.loop import APOLOGY_TOO_LONG, MAX_ROUNDS, MAX_TOOL_CALLS, TOO_LONG_AFTER_CHANGES
+from cartmates.agent.llm import LLMTurn
+from cartmates.agent.loop import APOLOGY_TOO_LONG, MAX_ROUNDS, MAX_TOOL_CALLS, TOO_LONG_AFTER_CHANGES
 from test_agent import AgentFlow, add_member, call, lines, rig, run, say, seed_line, use  # noqa: F401 (rig is a fixture)
 from test_network import connect_error, memory_rows, pending_count
 

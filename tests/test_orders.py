@@ -11,16 +11,16 @@ from decimal import Decimal
 
 import pytest
 
-from queuify import observe
-from queuify.agent.llm import LLMTurn, ScriptedLLM, ToolCall
-from queuify.domain import orders, queue
-from queuify.handlers import Handlers
-from queuify.lane import Lane
-from queuify.store import db
-from queuify.swiggy import cart
-from queuify.swiggy.errors import LoggedOut, SwiggyToolError, SwiggyUnavailable
-from queuify.telegram.events import CallbackTap, Message
-from queuify.telegram.outbox import FakeOutbox
+from cartmates import observe
+from cartmates.agent.llm import LLMTurn, ScriptedLLM, ToolCall
+from cartmates.domain import orders, queue
+from cartmates.handlers import Handlers
+from cartmates.lane import Lane
+from cartmates.store import db
+from cartmates.swiggy import cart
+from cartmates.swiggy.errors import LoggedOut, SwiggyToolError, SwiggyUnavailable
+from cartmates.telegram.events import CallbackTap, Message
+from cartmates.telegram.outbox import FakeOutbox
 
 GROUP = -100123
 ADDRESS = "addr1__XYZ"
@@ -358,8 +358,8 @@ def test_agent_propose_order_all_ends_the_turn(conn, caplog):
     seed_queue(conn)
     llm = ScriptedLLM([LLMTurn(tool_calls=[call("propose_order", scope="all")])])  # no second round scripted
     env = Env(conn, llm)
-    caplog.set_level(logging.INFO, logger="queuify.agent.loop")
-    run(env.say("@QueuifyBot order now"))
+    caplog.set_level(logging.INFO, logger="cartmates.agent.loop")
+    run(env.say("@CartMatesBot order now"))
     assert len(llm.sent) == 1
     (card,) = env.outbox.sent  # the card only; no model reply after it
     assert card.buttons and "Order #1" in card.text
@@ -373,7 +373,7 @@ def test_agent_propose_order_all_ends_the_turn(conn, caplog):
 def test_agent_refusal_goes_back_to_the_model(conn):
     llm = ScriptedLLM([LLMTurn(tool_calls=[call("propose_order", scope="mine")]), LLMTurn(text="Nothing queued.")])
     env = Env(conn, llm)
-    run(env.say("@QueuifyBot order mine"))
+    run(env.say("@CartMatesBot order mine"))
     output = next(i["output"] for i in llm.sent[1][1] if i.get("type") == "function_call_output")
     assert output == "error: You have nothing in the queue to order."
     assert [s.text for s in env.outbox.sent] == ["Nothing queued."]
@@ -383,7 +383,7 @@ def test_agent_scope_ask_then_only_the_asker_can_tap(conn):
     seed_queue(conn)
     llm = ScriptedLLM([LLMTurn(tool_calls=[call("propose_order", scope="ask")])])
     env = Env(conn, llm)
-    run(env.say("@QueuifyBot I want eggs now"))
+    run(env.say("@CartMatesBot I want eggs now"))
     (ask,) = env.outbox.sent
     assert ask.buttons == [[("Just yours (₹220)", "s:1:m"), ("Whole queue (₹265)", "s:1:a")]]
     assert conn.execute("SELECT kind FROM pending").fetchone()[0] == "scope"
@@ -427,7 +427,7 @@ def test_confirm_happy_path_records_everything(env):
 
 
 def test_state_transitions_are_logged_with_the_order_id(env, caplog):
-    caplog.set_level(logging.INFO, logger="queuify.executor.order_executor")
+    caplog.set_level(logging.INFO, logger="cartmates.executor.order_executor")
     run(env.say("/order all"))
     run(env.tap("o:1:c"))
     msgs = [r.getMessage() for r in caplog.records]

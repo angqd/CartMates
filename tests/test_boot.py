@@ -7,8 +7,8 @@ import time
 
 import pytest
 
-from queuify.__main__ import recover_stuck_orders
-from queuify.store import db
+from cartmates.__main__ import recover_stuck_orders
+from cartmates.store import db
 
 TABLES = {
     "members", "queue_lines", "queue_line_owners", "pending", "orders",
@@ -18,16 +18,16 @@ TABLES = {
 
 
 def run_app(data_dir):
-    """Boot `python -m queuify`, wait until ready, SIGTERM it, return (exit code, output)."""
+    """Boot `python -m cartmates`, wait until ready, SIGTERM it, return (exit code, output)."""
     # Minimal env: no Telegram/OpenAI vars, no inherited DATA_DIR.
     env = {"PATH": os.environ["PATH"], "DATA_DIR": str(data_dir)}
     proc = subprocess.Popen(
-        [sys.executable, "-m", "queuify"],
+        [sys.executable, "-m", "cartmates"],
         env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     output = ""
     deadline = time.monotonic() + 10
-    while "queuify ready" not in output:
+    while "cartmates ready" not in output:
         assert time.monotonic() < deadline, f"never became ready:\n{output}"
         line = proc.stdout.readline()
         assert line or proc.poll() is None, f"exited early:\n{output}"
@@ -66,14 +66,14 @@ def test_migration_006_applies_on_an_existing_db_and_keeps_rows(tmp_path):
 def test_app_boots_and_stops_cleanly_on_sigterm(tmp_path):
     code, output = run_app(tmp_path)
     assert code == 0
-    assert (tmp_path / "queuify.db").exists()
+    assert (tmp_path / "cartmates.db").exists()
     assert (tmp_path / "tokens").is_dir()
-    assert "queuify stopped" in output
+    assert "cartmates stopped" in output
 
 
 def test_boot_recovery_maps_in_flight_orders(tmp_path):
     """Called directly (no subprocess), so it is deterministic."""
-    conn = db.connect(tmp_path / "queuify.db")
+    conn = db.connect(tmp_path / "cartmates.db")
     db.migrate(conn)
     conn.execute("INSERT INTO members VALUES (1, 'Priya', '2026-01-01T00:00:00+00:00', 1)")
     for status in ("checking_out", "proposed", "claimed", "quoting", "placed"):

@@ -6,12 +6,12 @@ import httpx
 import pytest
 from telegram.error import NetworkError, TimedOut
 
-from queuify.agent import memory
-from queuify.agent.llm import ScriptedLLM
-from queuify.handlers import Handlers
-from queuify.lane import Lane
-from queuify.telegram.adapter import TelegramAdapter
-from queuify.telegram.outbox import FakeOutbox, TelegramOutbox, is_connect_error
+from cartmates.agent import memory
+from cartmates.agent.llm import ScriptedLLM
+from cartmates.handlers import Handlers
+from cartmates.lane import Lane
+from cartmates.telegram.adapter import TelegramAdapter
+from cartmates.telegram.outbox import FakeOutbox, TelegramOutbox, is_connect_error
 from test_agent import AgentFlow, call, lines, rig, run, say, use  # noqa: F401 (rig is a fixture)
 from test_swiggy import Rig
 from test_telegram import BOT_ID, BOT_NAME, GROUP
@@ -91,7 +91,7 @@ def test_a_question_send_that_fails_once_goes_out_on_retry(rig):
         from test_agent import MENTION
         from test_telegram import make_update
         await TelegramAdapter(lane, outbox, GROUP, BOT_ID, BOT_NAME).on_update(
-            make_update("@QueuifyBot diet coke, salt and some milk", entities=MENTION))
+            make_update("@CartMatesBot diet coke, salt and some milk", entities=MENTION))
         await asyncio.sleep(0.3)
         await lane.stop()
     run(go())
@@ -187,7 +187,7 @@ def test_is_connect_error(exc, expected):
 
 @pytest.mark.parametrize("scope", ["ask", "all"])
 def test_dropped_scope_question_or_bill_card_leaves_nothing_unanswerable(tmp_path, scope):
-    from queuify.store import db
+    from cartmates.store import db
     from test_orders import Env, PRIYA, NAMES, seed_queue
     c = db.connect(tmp_path / "o.db")
     db.migrate(c)
@@ -196,7 +196,7 @@ def test_dropped_scope_question_or_bill_card_leaves_nothing_unanswerable(tmp_pat
     seed_queue(c)
     env = Env(c, ScriptedLLM([use(call("propose_order", scope=scope))]))
     env.outbox.fail_sends(connect_error(), when=is_question)
-    run(env.say("@QueuifyBot order now"))
+    run(env.say("@CartMatesBot order now"))
     assert pending_count(c) == 0
     assert env.statuses() == {"ask": [], "all": ["cancelled"]}[scope]  # a card that never posted is cancelled
     assert "connection problem" in env.outbox.sent[-1].text

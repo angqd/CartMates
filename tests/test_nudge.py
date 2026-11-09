@@ -5,10 +5,10 @@ from decimal import Decimal
 
 import pytest
 
-from queuify.agent.llm import LLMTurn, ScriptedLLM, ToolCall
-from queuify.domain import orders, pending, queue
-from queuify.store import db
-from queuify.swiggy.errors import LoggedOut, SwiggyToolError, SwiggyUnavailable
+from cartmates.agent.llm import LLMTurn, ScriptedLLM, ToolCall
+from cartmates.domain import orders, pending, queue
+from cartmates.store import db
+from cartmates.swiggy.errors import LoggedOut, SwiggyToolError, SwiggyUnavailable
 from tests.test_orders import (ADDRESS, PRIYA, ROHAN, Env, FakeSwiggy, add, conn, run)  # noqa: F401
 
 HEADER = "🎉 Free delivery reached"
@@ -290,7 +290,7 @@ def test_item_label_format():
 def test_labels_match_across_list_snapshot_and_card(conn):
     env = make(conn)
     from datetime import datetime, timezone
-    from queuify.agent import memory
+    from cartmates.agent import memory
     assert "#1 E1 (1 pc) ×1 - Priya" in run(env.say("/list"))
     assert "#1 E1 (1 pc) ×1 for Priya" in memory.build_snapshot(conn, PRIYA, datetime.now(timezone.utc))
     run(env.say("/order all"))

@@ -3,12 +3,12 @@ shows delivery as FREE, post an order card. Silent in every other case; never ra
 import logging
 import sqlite3
 
-from queuify.domain import orders
-from queuify.domain.orders import OrderError
-from queuify.domain.queue import queued_total_paise, rupees
-from queuify.swiggy.client import SwiggyClient
-from queuify.swiggy.errors import LoggedOut
-from queuify.telegram.outbox import Outbox
+from cartmates.domain import orders
+from cartmates.domain.orders import OrderError
+from cartmates.domain.queue import queued_total_paise, rupees
+from cartmates.swiggy.client import SwiggyClient
+from cartmates.swiggy.errors import LoggedOut
+from cartmates.telegram.outbox import Outbox
 
 log = logging.getLogger(__name__)
 

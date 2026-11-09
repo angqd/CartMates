@@ -4,8 +4,8 @@ import logging
 
 import pytest
 
-from queuify.swiggy.errors import SwiggyToolError, SwiggyUnavailable
-from queuify.telegram.outbox import UrlButton, _markup
+from cartmates.swiggy.errors import SwiggyToolError, SwiggyUnavailable
+from cartmates.telegram.outbox import UrlButton, _markup
 from tests.test_orders import ADDRESS, GROUP, MEERA, PRIYA, ROHAN, Env, FakeSwiggy, conn, run, seed_queue  # noqa: F401
 
 PAY_URL = "https://example.test/pay/abc"

@@ -2,9 +2,9 @@
 import json
 from datetime import datetime, timedelta, timezone
 
-from queuify.agent import memory
-from queuify.domain import pending
-from queuify.store import db
+from cartmates.agent import memory
+from cartmates.domain import pending
+from cartmates.store import db
 from test_agent import (AgentFlow, add_member, ambiguous_turns, call, lines, rig, run, say,  # noqa: F401
                         two_questions, use)
 

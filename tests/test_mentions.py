@@ -1,7 +1,7 @@
 """B11: when someone changes a line they don't own, its owners are mentioned on the reply."""
 from test_agent import AgentFlow, add_member, call, rig, run, say, seed_line, use  # noqa: F401
 
-from queuify.telegram.outbox import Mention, TelegramOutbox
+from cartmates.telegram.outbox import Mention, TelegramOutbox
 
 # The fake sender in test_agent is user 1, "Priya".
 

@@ -6,22 +6,22 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from queuify.agent import memory
-from queuify.agent.llm import LLMTurn, LLMUnavailable, ScriptedLLM, ToolCall
-from queuify.agent.loop import APOLOGY_DOWN, APOLOGY_TOO_LONG, MAX_ROUNDS
-from queuify.agent.prompt import SYSTEM_PROMPT
-from queuify.agent.tools import SCHEMAS
-from queuify.domain import queue
-from queuify.handlers import Handlers
-from queuify.lane import Lane
-from queuify.store import db
-from queuify.telegram.adapter import TelegramAdapter
-from queuify.telegram.events import CallbackTap
-from queuify.telegram.outbox import FakeOutbox
+from cartmates.agent import memory
+from cartmates.agent.llm import LLMTurn, LLMUnavailable, ScriptedLLM, ToolCall
+from cartmates.agent.loop import APOLOGY_DOWN, APOLOGY_TOO_LONG, MAX_ROUNDS
+from cartmates.agent.prompt import SYSTEM_PROMPT
+from cartmates.agent.tools import SCHEMAS
+from cartmates.domain import queue
+from cartmates.handlers import Handlers
+from cartmates.lane import Lane
+from cartmates.store import db
+from cartmates.telegram.adapter import TelegramAdapter
+from cartmates.telegram.events import CallbackTap
+from cartmates.telegram.outbox import FakeOutbox
 from test_swiggy import Rig, kv, pending_login, command
 from test_telegram import BOT_ID, BOT_NAME, GROUP, make_update
 
-MENTION = [{"type": "mention", "offset": 0, "length": len("@QueuifyBot")}]
+MENTION = [{"type": "mention", "offset": 0, "length": len("@CartMatesBot")}]
 # The fake catalog: p1v1 Farmfresh milk 500 ml x 4 (max 1), p1v2 1 L (out of stock), p2v1 Meadow Oat Drink (max 5).
 OAT_PER_UNIT = 4000
 
@@ -67,7 +67,7 @@ class AgentFlow:
         await self.lane.stop()
 
     async def ask(self, text, **kw):
-        await self.adapter.on_update(make_update(f"@QueuifyBot {text}", entities=MENTION, **kw))
+        await self.adapter.on_update(make_update(f"@CartMatesBot {text}", entities=MENTION, **kw))
         await asyncio.sleep(0.3)
 
     async def tap(self, data, user_id=1, name="Priya"):
@@ -299,7 +299,7 @@ def test_next_turn_snapshot_lists_every_open_question_oldest_first(rig):
 
 
 def test_scope_question_still_replaces_the_askers_older_one(rig):
-    from queuify.domain import pending
+    from cartmates.domain import pending
     add_member(rig.conn, 1, "Priya")
     first = pending.create_scope(rig.conn, 1, {})
     second = pending.create_scope(rig.conn, 1, {})
@@ -412,7 +412,7 @@ def test_picks_from_the_first_ref_search_supply_the_extras(rig):
 
 
 def test_an_old_pending_row_with_only_options_still_resolves(rig):
-    from queuify.domain import pending
+    from cartmates.domain import pending
     add_member(rig.conn, 1, "Priya")
     options = [{"spin": "S1", "sku": "K1", "name": "Old Milk", "size": "1 L", "price": 5000, "max_qty": 5},
                {"spin": "S2", "sku": "K2", "name": "Old Oat", "size": "1 L", "price": 6000, "max_qty": 5}]
@@ -566,8 +566,8 @@ def test_not_configured_and_bare_mention(rig):
         lane = Lane(Handlers(rig.conn, out, GROUP).handle, out)
         adapter = TelegramAdapter(lane, out, GROUP, BOT_ID, BOT_NAME)
         lane.start()
-        await adapter.on_update(make_update("@QueuifyBot add milk", entities=MENTION))
-        await adapter.on_update(make_update("@QueuifyBot", entities=MENTION))
+        await adapter.on_update(make_update("@CartMatesBot add milk", entities=MENTION))
+        await adapter.on_update(make_update("@CartMatesBot", entities=MENTION))
         await asyncio.sleep(0.2)
         await lane.stop()
     run(go())
@@ -647,7 +647,7 @@ def test_snapshot_has_ids_owners_total_and_minimum(tmp_path):
     assert "Estimated total ₹180 vs free-delivery minimum ₹199: ₹19 to go" in snap
     assert "Swiggy login: logged_out; address: Flat 12" in snap
     assert "Open questions" not in snap
-    from queuify.domain import pending
+    from cartmates.domain import pending
     pending.create_variant(c, 1, {"question": "Which milk?", "options": [{"name": "A", "size": "1 L"}]})
     pending.create_variant(c, 1, {"question": "Which tea?", "options": [{"name": "B", "size": "250 g"}]})
     two = memory.build_snapshot(c, 1, now, 199)

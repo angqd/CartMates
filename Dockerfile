@@ -9,6 +9,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY queuify/ queuify/
+COPY cartmates/ cartmates/
 
-CMD ["python", "-m", "queuify"]
+CMD ["python", "-m", "cartmates"]

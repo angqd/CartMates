@@ -10,15 +10,15 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from queuify import tracing
-from queuify.domain import address, orders
-from queuify.domain.orders import OrderError
-from queuify.domain.queue import log_event, name_of, now_iso, rupees
-from queuify.swiggy import cart
-from queuify.swiggy.client import SwiggyClient
-from queuify.swiggy.errors import LoggedOut, SwiggyToolError
-from queuify.telegram.events import CallbackTap
-from queuify.telegram.outbox import Outbox, UrlButton
+from cartmates import tracing
+from cartmates.domain import address, orders
+from cartmates.domain.orders import OrderError
+from cartmates.domain.queue import log_event, name_of, now_iso, rupees
+from cartmates.swiggy import cart
+from cartmates.swiggy.client import SwiggyClient
+from cartmates.swiggy.errors import LoggedOut, SwiggyToolError
+from cartmates.telegram.events import CallbackTap
+from cartmates.telegram.outbox import Outbox, UrlButton
 
 log = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ class OrderExecutor:
     # ---- confirm ----
 
     @tracing.traced("order.confirm", attrs=lambda self, order_id, tapper, answer=None, method="cod": {
-        "queuify.order_id": order_id, "queuify.payment_method": method, "user.id": str(tapper.user_id),
+        "cartmates.order_id": order_id, "cartmates.payment_method": method, "user.id": str(tapper.user_id),
         "session.id": str(tapper.chat_id)})
     async def confirm(self, order_id: int, tapper: CallbackTap, answer: Answer | None = None,
                       method: str = "cod") -> None:
@@ -340,7 +340,7 @@ class OrderExecutor:
                 log.warning("could not edit message %s", message_id, exc_info=True)
 
     @tracing.traced("order.recover_unknown", attrs=lambda self, order_id, chat_id, logged_in: {
-        "queuify.order_id": order_id, "session.id": str(chat_id), "queuify.logged_in": logged_in})
+        "cartmates.order_id": order_id, "session.id": str(chat_id), "cartmates.logged_in": logged_in})
     async def recover_unknown(self, order_id: int, chat_id: int, logged_in: bool) -> None:
         """An order that was checking out when the bot stopped: take the Pay button away, then ask Swiggy
         (same rules as verify) unless logged out. A match is recorded as placed; otherwise a human decides."""
@@ -378,7 +378,7 @@ class OrderExecutor:
         await self.outbox.send(chat_id, f"Order #{order_id} did go through before the restart.\n{text}")
 
     @tracing.traced("order.recover_failed", attrs=lambda self, order_id, chat_id: {
-        "queuify.order_id": order_id, "session.id": str(chat_id)})
+        "cartmates.order_id": order_id, "session.id": str(chat_id)})
     async def recover_failed(self, order_id: int, chat_id: int) -> None:
         """An order that never reached checkout: nothing was ordered and its lines are still queued."""
         order = self.conn.execute("SELECT card_message_id FROM orders WHERE id=?", (order_id,)).fetchone()

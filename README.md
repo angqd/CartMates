@@ -1,4 +1,4 @@
-# Queuify
+# CartMates
 
 A household Telegram bot that keeps a shared grocery queue and orders it from Swiggy Instamart.
 Design and milestones: [docs/DESIGN.md](docs/DESIGN.md).
@@ -7,12 +7,12 @@ Design and milestones: [docs/DESIGN.md](docs/DESIGN.md).
 
     python -m venv .venv && .venv/bin/pip install -r requirements.txt
     cp .env.example .env
-    .venv/bin/python -m queuify
+    .venv/bin/python -m cartmates
 
 ## Tracing (Phoenix)
 
 `docker compose up -d` also starts [Arize Phoenix](https://github.com/Arize-ai/phoenix), which receives the bot's
-OpenTelemetry traces. Open http://localhost:6006 and pick the **queuify** project.
+OpenTelemetry traces. Open http://localhost:6007 and pick the **cartmates** project.
 
 - Each Telegram message or button tap is one trace: the agent turn, each LLM round (prompt, tool calls, tokens),
   each tool call, each Swiggy call, the order steps and the Telegram replies. Each chat is a session.
@@ -25,8 +25,8 @@ Settings in `.env`:
 | Variable | Meaning |
 |---|---|
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://phoenix:6006` in Docker; unset turns tracing off |
-| `QUEUIFY_TRACE_CONTENT` | `0` leaves prompts, messages and results out of traces (default on) |
-| `QUEUIFY_TRACE_MAX_CHARS` | longest text kept per attribute (default 8000) |
+| `CARTMATES_TRACE_CONTENT` | `0` leaves prompts, messages and results out of traces (default on) |
+| `CARTMATES_TRACE_MAX_CHARS` | longest text kept per attribute (default 8000) |
 
 ## Tests
 

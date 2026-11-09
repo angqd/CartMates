@@ -10,9 +10,9 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.exceptions import MCPError
 
-from queuify import tracing
-from queuify.swiggy.auth import SwiggyAuth
-from queuify.swiggy.errors import LoggedOut, SwiggyToolError, SwiggyUnavailable
+from cartmates import tracing
+from cartmates.swiggy.auth import SwiggyAuth
+from cartmates.swiggy.errors import LoggedOut, SwiggyToolError, SwiggyUnavailable
 
 log = logging.getLogger(__name__)
 

@@ -23,7 +23,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 
-from queuify.swiggy.errors import LoggedOut, LoginError, SwiggyUnavailable
+from cartmates.swiggy.errors import LoggedOut, LoginError, SwiggyUnavailable
 
 log = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ class SwiggyAuth:
         if data.get("client_id"):
             return data["client_id"]
         resp = await self._post(f"{AUTH_BASE}/register", json={
-            "client_name": "queuify",
+            "client_name": "cartmates",
             "redirect_uris": [REDIRECT_URI],
             "grant_types": ["authorization_code", "refresh_token"],
             "response_types": ["code"],

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
-from queuify.swiggy.client import SwiggyClient
+from cartmates.swiggy.client import SwiggyClient
 
 
 class CartError(Exception):

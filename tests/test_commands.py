@@ -1,8 +1,8 @@
 """B8: chat is the main interface. The menu, /help, the removed commands, bare /order and the read-only tools."""
 import json
 
-from queuify.agent.llm import LLMTurn, ScriptedLLM, ToolCall
-from queuify.handlers import menu_commands
+from cartmates.agent.llm import LLMTurn, ScriptedLLM, ToolCall
+from cartmates.handlers import menu_commands
 from tests.test_nudge import NudgeSwiggy, placed
 from tests.test_orders import ADDRESS, PRIYA, ROHAN, Env, add, conn, run, seed_queue  # noqa: F401
 

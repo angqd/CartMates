@@ -9,21 +9,21 @@ from telegram import BotCommand
 from telegram.error import InvalidToken
 from telegram.ext import Application
 
-from queuify import observe, tracing
-from queuify.agent.llm import OpenAILLM
-from queuify.config import Config, load_config
-from queuify.domain import group, orders, pending
-from queuify.handlers import Handlers, menu_commands
-from queuify.lane import Lane
-from queuify.store import db
-from queuify.swiggy.auth import SwiggyAuth
-from queuify.swiggy.client import SwiggyClient
-from queuify.telegram.adapter import ALLOWED_UPDATES, TelegramAdapter
-from queuify.telegram.events import CleanupPending, Recover
-from queuify.telegram.outbox import TelegramOutbox
-from queuify.telegram.polling import PollingErrorLogger
+from cartmates import observe, tracing
+from cartmates.agent.llm import OpenAILLM
+from cartmates.config import Config, load_config
+from cartmates.domain import group, orders, pending
+from cartmates.handlers import Handlers, menu_commands
+from cartmates.lane import Lane
+from cartmates.store import db
+from cartmates.swiggy.auth import SwiggyAuth
+from cartmates.swiggy.client import SwiggyClient
+from cartmates.telegram.adapter import ALLOWED_UPDATES, TelegramAdapter
+from cartmates.telegram.events import CleanupPending, Recover
+from cartmates.telegram.outbox import TelegramOutbox
+from cartmates.telegram.polling import PollingErrorLogger
 
-log = logging.getLogger("queuify")
+log = logging.getLogger("cartmates")
 
 # An order in one of these states was mid-flight when the process died.
 IN_FLIGHT = ("claimed", "quoting", "checking_out")
@@ -132,7 +132,7 @@ async def run(config: Config, conn: sqlite3.Connection, recovered: Recovered | N
             ticker = asyncio.create_task(cleanup_ticker(lane, conn, config.telegram_group_id))
 
     # Logged only after polling and the signal handlers exist, so "ready" means a signal is safe.
-    log.info("queuify ready (db: %s)", config.db_path)
+    log.info("cartmates ready (db: %s)", config.db_path)
     await stop.wait()
 
     if app:
@@ -169,7 +169,7 @@ def main() -> int:
     log.info("migrations applied: %s", db.migrate(conn) or "none")
     with tracing.span("boot.recover_stuck_orders", tracing.CHAIN) as sp:  # runs before the lane exists
         recovered = recover_stuck_orders(conn)
-        sp.set_attributes({"queuify.unknown": len(recovered.unknown), "queuify.failed": len(recovered.failed)})
+        sp.set_attributes({"cartmates.unknown": len(recovered.unknown), "cartmates.failed": len(recovered.failed)})
     log.info("recovered %d stuck order(s)", len(recovered))
     log.info("deleted %d expired question(s)", pending.delete_expired(conn))
 
@@ -183,7 +183,7 @@ def main() -> int:
     finally:
         conn.close()
         tracing.shutdown()
-    log.info("queuify stopped")
+    log.info("cartmates stopped")
     return code
 
 

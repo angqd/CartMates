@@ -9,16 +9,16 @@ import httpx2
 import pytest
 from telegram.error import ChatMigrated, NetworkError
 
-from queuify.__main__ import cleanup_ticker, recover_stuck_orders
-from queuify.agent.llm import ScriptedLLM
-from queuify.domain import group, pending
-from queuify.handlers import Handlers
-from queuify.lane import Lane
-from queuify.swiggy.errors import LoggedOut
-from queuify.telegram.adapter import TelegramAdapter
-from queuify.telegram.events import Recover
-from queuify.telegram.outbox import FakeOutbox, TelegramOutbox
-from queuify.telegram.polling import PollingErrorLogger
+from cartmates.__main__ import cleanup_ticker, recover_stuck_orders
+from cartmates.agent.llm import ScriptedLLM
+from cartmates.domain import group, pending
+from cartmates.handlers import Handlers
+from cartmates.lane import Lane
+from cartmates.swiggy.errors import LoggedOut
+from cartmates.telegram.adapter import TelegramAdapter
+from cartmates.telegram.events import Recover
+from cartmates.telegram.outbox import FakeOutbox, TelegramOutbox
+from cartmates.telegram.polling import PollingErrorLogger
 from tests.test_orders import GROUP, PRIYA, ROHAN, Env, FakeSwiggy, conn, run, seed_queue  # noqa: F401
 from tests.test_telegram import BOT_ID, BOT_NAME, cmd, make_update
 from tests.test_upi import UpiEnv  # noqa: F401
@@ -189,7 +189,7 @@ def test_pay_message_id_is_stored_in_payment_json(conn):
 def test_logged_out_after_changes_is_not_parked_and_nothing_is_replayed(tmp_path):
     from test_agent import AgentFlow, call, lines, use
     from test_swiggy import Rig, pending_login
-    from queuify.store import db
+    from cartmates.store import db
     c = db.connect(tmp_path / "t.db")
     db.migrate(c)
     rig = Rig(tmp_path, c)

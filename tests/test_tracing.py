@@ -7,10 +7,10 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from queuify import observe, tracing
-from queuify.config import load_config
-from queuify.domain import orders, queue
-from queuify.telegram.outbox import TelegramOutbox
+from cartmates import observe, tracing
+from cartmates.config import load_config
+from cartmates.domain import orders, queue
+from cartmates.telegram.outbox import TelegramOutbox
 from test_agent import AgentFlow, call, rig, say, use  # noqa: F401  (rig is a fixture: logged in)
 from test_swiggy import Flow, Rig, command, conn, pending_login  # noqa: F401
 from test_telegram import GROUP, make_update
@@ -66,12 +66,12 @@ def test_event_agent_llm_tool_swiggy_nest(rig, spans):
     assert root.name == "event:Message" and root.parent is None
     assert root.attributes["openinference.span.kind"] == "CHAIN"
     assert root.attributes["session.id"] == str(GROUP) and root.attributes["user.id"] == "1"
-    assert root.attributes["queuify.turn_id"]
+    assert root.attributes["cartmates.turn_id"]
     (turn,) = by_name(spans, "agent.turn")
     assert parent_name(spans, turn) == "event:Message"
     assert turn.attributes["openinference.span.kind"] == "AGENT"
-    assert turn.attributes["queuify.rounds"] == 3 and turn.attributes["queuify.outcome"] == "replied"
-    assert turn.attributes["queuify.tools"] == "search_catalog,add_to_queue"
+    assert turn.attributes["cartmates.rounds"] == 3 and turn.attributes["cartmates.outcome"] == "replied"
+    assert turn.attributes["cartmates.tools"] == "search_catalog,add_to_queue"
     llms = by_name(spans, "llm.chat")
     assert len(llms) == 3 and {parent_name(spans, s) for s in llms} == {"agent.turn"}
     first = llms[0].attributes
@@ -99,7 +99,7 @@ def test_content_off_records_no_text(rig, spans):
     assert not keys & {"input.value", "output.value", "tool.parameters"}
     assert "oat" not in " ".join(all_values(spans)).lower().replace("meadow", "")  # no prompt or reply text
     (turn,) = by_name(spans, "agent.turn")
-    assert turn.attributes["llm.token_count.total"] == 0 and turn.attributes["queuify.rounds"] == 3
+    assert turn.attributes["llm.token_count.total"] == 0 and turn.attributes["cartmates.rounds"] == 3
 
 
 def test_truncation_marker():
@@ -132,7 +132,7 @@ def test_login_paste_never_reaches_a_span(tmp_path, conn, spans):
     values = " ".join(all_values(spans))
     assert "SECRETCODE" not in values and "/callback?" not in values
     assert login["verifier"] not in values
-    redacted = [s for s in by_name(spans, "event:") if s.attributes.get("queuify.redacted")]
+    redacted = [s for s in by_name(spans, "event:") if s.attributes.get("cartmates.redacted")]
     assert len(redacted) == 1 and "input.value" not in redacted[0].attributes
 
 
@@ -143,9 +143,9 @@ def test_paste_text_is_refused_by_set_text(spans):
 
 
 def test_errors_are_recorded_on_the_root(spans):
-    from queuify.lane import Lane
-    from queuify.telegram.events import CleanupPending
-    from queuify.telegram.outbox import FakeOutbox
+    from cartmates.lane import Lane
+    from cartmates.telegram.events import CleanupPending
+    from cartmates.telegram.outbox import FakeOutbox
 
     async def boom(event):
         raise RuntimeError("bad")
@@ -213,9 +213,9 @@ def test_telegram_send_span_hides_links_and_tokens(spans):
 
 def test_setup_without_endpoint_installs_nothing(monkeypatch):
     from opentelemetry import trace
-    for name in ("OTEL_EXPORTER_OTLP_ENDPOINT", "QUEUIFY_TRACE_CONTENT", "QUEUIFY_TRACE_MAX_CHARS"):
+    for name in ("OTEL_EXPORTER_OTLP_ENDPOINT", "CARTMATES_TRACE_CONTENT", "CARTMATES_TRACE_MAX_CHARS"):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr("queuify.config.load_dotenv", lambda: None)
+    monkeypatch.setattr("cartmates.config.load_dotenv", lambda: None)
     before = trace.get_tracer_provider()
     cfg = load_config()
     assert cfg.otel_endpoint is None and cfg.trace_content is True and cfg.trace_max_chars == 8000
@@ -225,10 +225,10 @@ def test_setup_without_endpoint_installs_nothing(monkeypatch):
 
 
 def test_config_switches(monkeypatch):
-    monkeypatch.setattr("queuify.config.load_dotenv", lambda: None)
+    monkeypatch.setattr("cartmates.config.load_dotenv", lambda: None)
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://phoenix:6006")
-    monkeypatch.setenv("QUEUIFY_TRACE_CONTENT", "0")
-    monkeypatch.setenv("QUEUIFY_TRACE_MAX_CHARS", "100")
+    monkeypatch.setenv("CARTMATES_TRACE_CONTENT", "0")
+    monkeypatch.setenv("CARTMATES_TRACE_MAX_CHARS", "100")
     cfg = load_config()
     assert (cfg.otel_endpoint, cfg.trace_content, cfg.trace_max_chars) == ("http://phoenix:6006", False, 100)
 
@@ -249,7 +249,7 @@ def test_order_confirm_span_has_state_events(orders_conn, spans):
     run(env.say("/order all"))
     run(env.tap("o:1:u", user=ROHAN, message_id=1000))
     (span,) = by_name(spans, "order.confirm")
-    assert span.attributes["queuify.order_id"] == 1 and span.attributes["queuify.payment_method"] == "upi"
+    assert span.attributes["cartmates.order_id"] == 1 and span.attributes["cartmates.payment_method"] == "upi"
     names = [e.name for e in span.events]
     for step in ("claimed", "quoting", "checking_out", "pay_link_sent", "paid", "placed"):
         assert step in names

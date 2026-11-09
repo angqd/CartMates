@@ -3,7 +3,7 @@ import sqlite3
 from dataclasses import dataclass
 from decimal import Decimal
 
-from queuify.swiggy.client import SwiggyClient
+from cartmates.swiggy.client import SwiggyClient
 
 
 @dataclass(frozen=True)

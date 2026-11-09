@@ -14,13 +14,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from queuify.agent.llm import LLMTurn, OpenAILLM  # noqa: E402
-from queuify.agent.loop import run_turn  # noqa: E402
-from queuify.config import load_config  # noqa: E402
-from queuify.domain import queue  # noqa: E402
-from queuify.store import db  # noqa: E402
-from queuify.telegram.events import Message  # noqa: E402
-from queuify.telegram.outbox import FakeOutbox  # noqa: E402
+from cartmates.agent.llm import LLMTurn, OpenAILLM  # noqa: E402
+from cartmates.agent.loop import run_turn  # noqa: E402
+from cartmates.config import load_config  # noqa: E402
+from cartmates.domain import queue  # noqa: E402
+from cartmates.store import db  # noqa: E402
+from cartmates.telegram.events import Message  # noqa: E402
+from cartmates.telegram.outbox import FakeOutbox  # noqa: E402
 
 
 def variant(spin, size, price, stock=True, max_qty=5):

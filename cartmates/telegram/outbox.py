@@ -9,7 +9,7 @@ import httpx
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import ChatMigrated, NetworkError, TimedOut
 
-from queuify import tracing
+from cartmates import tracing
 
 log = logging.getLogger(__name__)
 T = TypeVar("T")
