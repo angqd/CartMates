@@ -1,0 +1,16 @@
+.env
+*.db
+__pycache__/
+.pytest_cache/
+.venv/
+_to_delete/
+instamart_poc/.tokens/
+instamart_poc/results/
+*.log
+data/
+reference/
+
+# generated, never committed
+docs/DESIGN.pdf
+docs/site/
+.claude/

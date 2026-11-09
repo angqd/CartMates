@@ -1,0 +1,11 @@
+.env
+.git
+.venv
+**/__pycache__
+.pytest_cache
+*.db
+data/
+legacy/
+instamart_poc/
+docs/
+tests/
