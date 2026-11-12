@@ -323,8 +323,18 @@ Decisions taken when M4 started (2026-11-05). Response shapes come from the POC 
    - Only `status: CONFIRMED` with an `orderId` counts as placed. Anything else (a tool error, a network error,
      a timeout, an odd response) goes to verify.
 5. **Verify:** `get_orders(count=5)`.
-   - A match is an order created after `claimed_at` minus 2 minutes, at our address, whose item names overlap
-     ours. A match counts as placed with that id.
+   - `get_orders` lists the whole Swiggy account, including orders made in the Swiggy app, and Swiggy's orders
+     carry no tag of ours. So a match has to agree on everything we know (tightened on 2026-11-12):
+     - live (not failed, cancelled or unpaid), created after `claimed_at` minus 2 minutes, at our address;
+     - total within ₹1 of the total sent to checkout (`bill_json.checkout_to_pay`, stored when the order moves to
+       `checking_out`, so a restart can still use it; older orders fall back to the proposal's `to_pay`);
+     - the same payment method (UPI or not);
+     - at least half of our item names.
+   - A UPI order whose Swiggy id we already hold matches on that id alone.
+   - **Exactly one** match counts as placed with that id. Two or more are never guessed between: the order is
+     `unknown` and a human runs `/resolve`. Item count isn't compared, because Swiggy adds ₹0 promo items.
+   - Accepted risk: a wrong match now needs our checkout to have failed while one other order with the same
+     total, method, address and items was placed in the same few minutes.
    - No match means `unknown`: tell the group to check the Swiggy app and run `/resolve <id> placed|failed`.
      New orders are blocked until then.
 6. **Record (one transaction):**
@@ -669,7 +679,7 @@ Decided: the old prototype (`app/`, `scripts/`, `tests/`, `setup.sh`) moves to `
 | M5 | Free-delivery nudge with live quote | The nudge fires once per queue growth |
 | M6 | Hardening: restart recovery, rate limits, logs, group-ID migration | Kill -9 mid-checkout ends as `unknown` and blocks new orders |
 | M7 (built, not yet verified live) | Tracing: OpenTelemetry spans (lane → agent turn → LLM round → tool → Swiggy call; executor steps), exported over OTLP to Arize Phoenix as a second compose service | One trace shows a whole order from the message to the confirmed checkout; no tokens or auth codes in spans |
-| v2 | Multi-household (section 17, milestones M8-M13) | Two households run side by side without crossing (17.8) |
+| v2 | Multi-household (section 17, milestones M8-M12) | Two households run side by side without crossing (17.8) |
 | v3 | Deploy to a VPS | Same image and volume; only the hosting changes |
 | later | Long-term notes memory (see 15.1) | "Shounak is vegetarian" said once still shapes picks a week later; notes are listed and removable |
 
@@ -804,7 +814,7 @@ disagrees with them, this section wins for v2.
 grants production access (v3).
 
 **Fresh start.** No data comes over from Queuify. The flat moves to a new Telegram group with the CartMates bot, and
-the Queuify container is shut down. Until M9 that group runs the v1 code here, with its own new `data/cartmates.db`.
+the Queuify container is shut down. Until M8 that group runs the v1 code here, with its own new `data/cartmates.db`.
 
 ### 17.1 What changes, in one picture
 
@@ -818,11 +828,14 @@ the Queuify container is shut down. Until M9 that group runs the v1 code here, w
          ▼              ▼              ▼
      lane hh-1      lane hh-2      lane hh-N        one FIFO worker per household, started on first use,
    households/1.db  households/2.db   ...           stopped after ~30 min idle; owns its DB connection
-         │              │
-         └──── shared, process-wide ────┐
-              LLM semaphore (4)          │
-              checkout lock (one)        │  every update_cart → checkout sequence holds it
+         │              │              │
+         └──────────────┴──────────────┘
+           shared, process-wide: LLM semaphore (4)
 ```
+
+**One Swiggy account per household (assumed, not enforced).** Swiggy keeps one cart per account, and a household's
+lane already owns its cart, exactly as in v1. So v2 needs no lock between households. Sharing an account between
+households is deferred to v3 (17.10).
 
 What stays the same: inside one household, everything in sections 3-16 runs unchanged. Each lane gets the same
 `Handlers` object it has today, built for that household (its connection, Swiggy client, chat id). The domain code
@@ -866,7 +879,7 @@ data/
 
 ### 17.3 One-time switch from the v1 file (2a, 8c)
 
-Nothing is imported from Queuify. The only v1 data is what the new CartMates group builds before M9, in
+Nothing is imported from Queuify. The only v1 data is what the new CartMates group builds before M8, in
 `data/cartmates.db`. The switch runs at startup when `registry.db` doesn't exist and `cartmates.db` does:
 1. Copy `cartmates.db` (and its `-wal`) and `tokens/swiggy.json` to `data/backups/v1-<timestamp>/`.
 2. Create `registry.db`, household 1 (`setup_by` = NULL), and `chats(telegram, <kv.group_id or TELEGRAM_GROUP_ID>, 1)`.
@@ -896,12 +909,8 @@ With no v1 file (a clean install), boot creates an empty `registry.db` and house
 |---|---|---|
 | LLM concurrency (4b) | `asyncio.Semaphore(LLM_CONCURRENCY)` around each model round in `agent/loop.py` | A round waits for a slot. Lanes keep each household to one turn at a time. |
 | Daily token budget (4c) | before a turn, `SUM(token_usage)` for today in the household's DB vs `registry.households.token_budget` or `DAILY_TOKEN_BUDGET` | Over budget: free text gets "I've hit today's limit for this group; /order, /list and buttons still work." Commands and taps never check the budget. |
-| Checkout lock (3d) | one `asyncio.Lock` in the router, handed to each household's `SwiggyClient` | Held by every code path that calls `update_cart`: a proposal, a nudge, and the executor from re-quote through checkout (and, for now, the UPI wait, 4g). A nudge that finds the lock taken skips silently. |
 | Swiggy calls (4d) | none beyond the per-turn caps | |
-
-The lock covers proposals and nudges too, not only Confirm. Swiggy keeps one cart per account, and `update_cart`
-replaces it. Without the lock, household B's `/order` could rewrite the cart between household A's re-quote and A's
-checkout, and A would order B's items.
+| Swiggy cart (3d) | none in v2: one account per household, so the household's lane already owns the cart | See 17.10 for sharing an account |
 
 ### 17.5 Onboarding and login
 
@@ -943,11 +952,11 @@ chat instead". It is never used.
 | `CARTMATES_MASTER_KEY` | new, required once any household exists. Missing or wrong key: those households start logged out and say so; nothing else breaks. |
 | `LLM_CONCURRENCY` (4), `DAILY_TOKEN_BUDGET` (300000) | new |
 
-### 17.7 Platform boundary and observability
+### 17.7 Observability
 
-- **Boundary** (7a): `outbox.py` turns Telegram errors into our own `ChannelUnavailable` (connect errors and
-  timeouts, the cases `NetworkError` covers today). `agent/loop.py` and `handlers.py` catch that instead. Process
-  wiring moves from `__main__.py` to `telegram/app.py`, so nothing outside `cartmates/telegram/` imports `telegram`.
+- **Boundary** (7a, 7b): deferred to v3. Telegram stays the only interface in v2, and the known `telegram` imports in
+  `__main__.py`, `agent/loop.py` and `handlers.py` stay. The registry still keys chats by `(platform, chat_id)`, since a
+  column with one value costs nothing and saves a migration later.
 - **Tracing** (8a): every root span gets `cartmates.household_id`; `session.id` becomes `hh-<id>` instead of the chat
   id. Log lines get `[hh-<id> <turn_id>]`. Budgets come from the DB, never from Phoenix. Content capture stays on
   for now (8b).
@@ -960,24 +969,53 @@ Each milestone keeps every existing test passing, and the flat's CartMates group
 
 | # | Builds | Proven by |
 |---|---|---|
-| **M8** Platform boundary | `ChannelUnavailable` in the outbox; `agent/` and `handlers` stop importing `telegram`; wiring moves to `telegram/app.py` | New `test_boundary.py`: walks every module outside `cartmates/telegram/` and fails on a `telegram` import. The B1 tests in `test_network.py` pass with the fake outbox raising `ChannelUnavailable`. |
-| **M9** Registry, silo files, switch | `registry.db` schema; `households/<id>.db`; migrations 008-009; secrets encryption; the boot pass; the switch in 17.3. Still one lane, now found through the registry. | `test_migration.py`: a v1 fixture DB migrates to the expected registry rows and file; running it twice changes nothing; a crash after each step (injected) then a rerun gives the same result; no plaintext token file is left; the backup exists. A household with a corrupt file is `broken` and a second household still boots. A wrong master key leaves that household logged out. With no v1 file, boot creates an empty registry. Manual: the switch run on a copy of the group's `cartmates.db` first, then for real, and the group used normally afterwards. |
-| **M10** LaneRouter | `LaneRouter`, one `Handlers` per household, idle stop, running-lanes-only ticker, unknown-chat reply, private-chat refusal, supergroup upgrade remapping in the registry, `hh-<id>` in spans and logs | `test_households.py`, two households in one process with the fakes: messages interleaved A, B, A, B add lines only to their own file; each turn's handler holds only its own connection (the test wraps `db.connect` and checks); a slow turn in A (blocked fake LLM) doesn't delay B; order inside A stays FIFO; an idle lane stops and restarts on the next message with its data intact; an unknown group gets one reply and the scripted LLM gets no call; a supergroup upgrade in A keeps A's household id. A test asserts no `await` happens inside `db.transaction` (the context manager fails if the running coroutine yields). |
-| **M11** Shared limits | Checkout lock on every `update_cart` path; LLM semaphore; token budget and `token_usage` | The fake Swiggy server records the call order. Both households confirm at the same moment: the log shows A's `update_cart` and `checkout` before B's `update_cart`, never interleaved. B's `/order` during A's checkout waits; B's nudge during A's checkout is skipped. With `LLM_CONCURRENCY=2` and four households, at most two fake model calls run at once. Over budget: free text gets the limit reply, `/order` and Confirm still go through; usage rows commit with the turn, and a turn that fails before commit adds none. |
-| **M12** Onboarding and private login | `cartmates.admin invite` and `usage`; `/setup`; private-chat login with `login_links`; replace-login confirmation; setup address step; `my_chat_member` handling; `/forget`; 30-day deletion | End to end with fakes: invite → `/setup` → private login → address → "Ready" → first add. A used, expired or made-up code is refused. No group message ever contains the Swiggy authorize URL. A login paste in the group is refused and not used. Replacing a login needs a confirm tap. Removing the bot makes the household `inactive`; at day 30 (injected clock) the file is gone, the row is `deleted`, and a new household gets a new id. |
-| **M13** Live check with two households | The flat's CartMates group (household 1) and a test group (household 2, onboarded with an invite), both on the same Swiggy account | Checklist: both groups add and list at the same time without crossing; a COD order placed in the test group and cancelled straight away in the Swiggy app; a `/order` in the flat while the test group's checkout runs waits for it; Phoenix shows `hh-1` and `hh-2` sessions; `cartmates.admin usage` matches the turns. Also the open question below about logins. |
+| **M8** Registry, silo files, switch | `registry.db` schema; `households/<id>.db`; migrations 008-009; secrets encryption; the boot pass; the switch in 17.3. Still one lane, now found through the registry. | `test_migration.py`: a v1 fixture DB migrates to the expected registry rows and file; running it twice changes nothing; a crash after each step (injected) then a rerun gives the same result; no plaintext token file is left; the backup exists. A household with a corrupt file is `broken` and a second household still boots. A wrong master key leaves that household logged out. With no v1 file, boot creates an empty registry. Manual: the switch run on a copy of the group's `cartmates.db` first, then for real, and the group used normally afterwards. |
+| **M9** LaneRouter | `LaneRouter`, one `Handlers` per household, idle stop, running-lanes-only ticker, unknown-chat reply, private-chat refusal, supergroup upgrade remapping in the registry, `hh-<id>` in spans and logs | `test_households.py`, two households in one process with the fakes: messages interleaved A, B, A, B add lines only to their own file; each turn's handler holds only its own connection (the test wraps `db.connect` and checks); a slow turn in A (blocked fake LLM) doesn't delay B; order inside A stays FIFO; an idle lane stops and restarts on the next message with its data intact; an unknown group gets one reply and the scripted LLM gets no call; a supergroup upgrade in A keeps A's household id. A test asserts no `await` happens inside `db.transaction` (the context manager fails if the running coroutine yields). |
+| **M10** Shared limits | LLM semaphore; token budget and `token_usage` | With `LLM_CONCURRENCY=2` and four households, at most two fake model calls run at once. Over budget: free text gets the limit reply, `/order` and Confirm still go through; usage rows commit with the turn, and a turn that fails before commit adds none. |
+| **M11** Onboarding and private login | `cartmates.admin invite` and `usage`; `/setup`; private-chat login with `login_links`; replace-login confirmation; setup address step; `my_chat_member` handling; `/forget`; 30-day deletion | End to end with fakes: invite → `/setup` → private login → address → "Ready" → first add. A used, expired or made-up code is refused. No group message ever contains the Swiggy authorize URL. A login paste in the group is refused and not used. Replacing a login needs a confirm tap. Removing the bot makes the household `inactive`; at day 30 (injected clock) the file is gone, the row is `deleted`, and a new household gets a new id. |
+| **M12** Live check with two households | The flat's CartMates group (household 1) and a test group (household 2, onboarded with an invite), each logged in to its own Swiggy account (the test group uses a second account of the host's) | Checklist: both groups add and list at the same time without crossing; a COD order placed in the test group and cancelled straight away in the Swiggy app; both groups `/order` at the same moment and each card shows only its own items; Phoenix shows `hh-1` and `hh-2` sessions; `cartmates.admin usage` matches the turns. |
 
-No automated test calls a Swiggy write tool on the real server (section 7.1). M13 is the only real order, placed
+No automated test calls a Swiggy write tool on the real server (section 7.1). M12 is the only real order, placed
 by hand.
 
 ### 17.9 Open questions
 
-- **Does `update_cart` during a pending UPI payment affect the pending order?** If not, the checkout lock can be
-  released before the payment wait. Until it's answered, the lock is held for up to ~75 s (4g).
-- **Two logins on one Swiggy account.** Households 1 and 2 log in separately to the same account. It's not known
-  whether a second login (a second refresh-token family) logs the first one out. Check it with two real logins
-  early in M12, before relying on it; it uses only read calls.
-- **Order matching on a shared account.** Verify and restart recovery (7.1, 7.4) match `get_orders` by time,
-  address and item names, and `get_orders` lists the whole account's orders. Two households at the same address
-  with similar items could match each other's order. For the live check the test group uses a different saved
-  address. A proper fix waits for the per-account lock (3d).
+- None open for v2 itself. The shared-account questions moved to 17.10.
+
+### 17.10 Deferred to v3: sharing one Swiggy account between households
+
+Not built in v2 (decided 2026-11-12). Recorded here so v3 starts from it.
+
+**The problem.** A lane keeps one household's work in order, but Swiggy's cart belongs to the account. If two
+households share an account, two lanes write one cart:
+1. Household A taps Confirm, and the re-quote puts A's items in the cart.
+2. Household B sends `/order`, and its quote replaces the cart with B's items.
+3. A's checkout orders whatever is in the cart: B's items, paid by A.
+
+Each lane did its own steps in order. The bug is between lanes. The proposal, the nudge and the executor's
+re-quote all call `update_cart`.
+
+**Possible fixes:**
+- **Account lane (preferred).** One FIFO worker per Swiggy account owns the cart, in the same pattern as the
+  household lanes. Household lanes stop calling `update_cart` and checkout and send it a job instead: "quote these
+  lines" for a proposal or a nudge, or "quote, check out and collect payment" for Confirm. A job is the whole
+  sequence, so nothing runs between a re-quote and its checkout. Only the account lane holds a Swiggy client that can
+  write, so no code path can skip it. Cost: B's `/order` waits behind A's checkout, up to ~2 minutes with UPI. A nudge
+  is skipped while the account lane is busy.
+- **A process-wide lock** around the same three call sites does the same thing, but goes against the lane pattern.
+  It has to sit at the call sites, because `asyncio.Lock` isn't reentrant and the executor's own re-quote would
+  deadlock inside `cart.quote`.
+- **Knowing the account.** Both need to know which households share an account. Swiggy gives no account id yet.
+  Comparing saved address ids at login might work (unverified).
+
+**Questions to answer first:**
+- **Two logins on one account.** Each household's login is its own OAuth client and refresh-token chain. It's not
+  known whether a second login logs the first out. Test with two scratch logins: a read call, a forced refresh and
+  another read for each, checking the first after the second. If they conflict, store tokens per account in the
+  registry, with households pointing at an account.
+- **One OAuth client for all of CartMates**, instead of one per household. Production access will most likely
+  approve one fixed client with an HTTPS redirect.
+- **UPI wait.** Does `update_cart` during a pending UPI payment affect that order? If not, the account lane can take
+  the next job during the payment wait.
+- **Order matching** (7.1 step 5) is already strict enough for a shared account. The test group should still use
+  a different saved address.
