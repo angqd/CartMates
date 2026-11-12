@@ -172,6 +172,12 @@ class RecentOrder:
     item_names: list[str]
     status: str = ""          # Swiggy's status, e.g. DELIVERED
     payment_status: str = ""  # e.g. SUCCESS
+    total_paise: int | None = None  # billDetails.grandTotal (or totalAmount); None when Swiggy left it out
+    payment_method: str = ""  # e.g. UPIIntent
+
+    @property
+    def is_upi(self) -> bool:
+        return "UPI" in self.payment_method.upper()
 
     @property
     def live(self) -> bool:
@@ -186,9 +192,12 @@ async def recent_orders(client: SwiggyClient, count: int = 5) -> list[RecentOrde
     for o in data.get("orders", []):
         try:
             created = datetime.fromisoformat(str(o["createdAt"]).replace("Z", "+00:00"))
+            total = (o.get("billDetails") or {}).get("grandTotal", o.get("totalAmount"))
             out.append(RecentOrder(str(o["orderId"]), created, str((o.get("deliveryAddress") or {}).get("id") or ""),
                                    [str(i.get("name", "")) for i in o.get("items", [])],
-                                   str(o.get("status") or ""), str(o.get("paymentStatus") or "")))
-        except (KeyError, ValueError):
+                                   str(o.get("status") or ""), str(o.get("paymentStatus") or ""),
+                                   parse_paise(total) if total is not None else None,
+                                   str(o.get("paymentMethod") or "")))
+        except (KeyError, ValueError, CartError):
             continue  # an order we can't read can't match
     return out

@@ -49,6 +49,8 @@ class FakeSwiggy:
         self.orders: list[dict] = []                        # what get_orders returns
         self.orders_error: Exception | None = None
         self.resets = 0                                     # times the MCP session was dropped
+        self.last_to_pay: Decimal | None = None             # To Pay of the last update_cart, in rupees
+        self.last_method = "Cash"                           # paymentMethod of the last checkout
 
     async def reset_session(self):
         self.resets += 1
@@ -64,6 +66,7 @@ class FakeSwiggy:
         self.calls.append((tool, args))
         if tool == "checkout":
             assert retry_rate_limit is False  # checkout must never be retried on a 429
+            self.last_method = "UPIIntent" if args.get("paymentMethod") == "UPI" else "Cash"
         return await getattr(self, tool)(args)
 
     async def update_cart(self, args):
@@ -82,6 +85,7 @@ class FakeSwiggy:
                           "isInStockAndAvailable": spin not in self.out_of_stock,
                           "mrp": 0, "discountedFinalPrice": float(unit * kept if self.line_prices else unit)})
         to_pay = total + FEE + self.surcharge
+        self.last_to_pay = to_pay
         return {"selectedAddress": self.selected, "cartTotalAmount": f"₹{to_pay.normalize():f}", "items": items,
                 "billBreakdown": {"lineItems": [
                     {"label": "Item Total", "value": f"₹{total:.2f}"},
@@ -115,14 +119,25 @@ class FakeSwiggy:
         assert args == {"count": 5}
         if self.orders_error:
             raise self.orders_error
-        return {"orders": self.orders, "hasMore": False}
+        # A recent order added with no total or method gets the bot's own: the last cart and checkout.
+        out = []
+        for o in self.orders:
+            o = dict(o)
+            if o.get("billDetails", {}).get("grandTotal", 0) is None:
+                o["billDetails"] = {"grandTotal": float(self.last_to_pay) if self.last_to_pay is not None else 0}
+            if o.get("paymentMethod", "") is None:
+                o["paymentMethod"] = self.last_method
+            out.append(o)
+        return {"orders": out, "hasMore": False}
 
     def add_recent(self, order_id="ORD999", names=("E1", "M1", "B1"), address="addr1", age=timedelta(0),
-                   status="CONFIRMED", payment_status="SUCCESS"):
+                   status="CONFIRMED", payment_status="SUCCESS", total=None, method=None):
+        """total in rupees and method as Swiggy writes it (Cash, UPIIntent); None means "same as ours"."""
         created = datetime.now(timezone.utc) - age
         self.orders.append({"orderId": order_id, "createdAt": created.isoformat().replace("+00:00", "Z"),
                             "deliveryAddress": {"id": address}, "items": [{"name": n, "quantity": 1} for n in names],
-                            "status": status, "paymentStatus": payment_status})
+                            "status": status, "paymentStatus": payment_status,
+                            "billDetails": {"grandTotal": total}, "paymentMethod": method})
 
 
 # ---- setup ----
@@ -252,6 +267,12 @@ def test_cod_and_recent_orders_parsing():
     (o,) = run(cart.recent_orders(sw))
     assert (o.order_id, o.address_id, o.item_names) == ("O1", "addr1", ["E1", "M1", "B1"])
     assert o.created_at.tzinfo is not None
+    sw.orders = [{"orderId": "O2", "createdAt": "2026-10-24T17:09:54.000Z", "items": [], "totalAmount": 298,
+                  "billDetails": {"grandTotal": 298.4}, "paymentMethod": "UPIIntent"},
+                 {"orderId": "O3", "createdAt": "2026-10-24T17:09:54.000Z", "items": [], "totalAmount": 120}]
+    o2, o3 = run(cart.recent_orders(sw))
+    assert (o2.total_paise, o2.is_upi) == (29840, True)  # grandTotal wins over totalAmount
+    assert (o3.total_paise, o3.is_upi, o3.payment_method) == (12000, False, "")
 
 
 def test_split_equally_gives_leftover_paise_to_lowest_ids():
@@ -542,6 +563,8 @@ def test_checkout_error_then_verify_finds_the_order(env, mode):
     {"age": timedelta(hours=3)},                          # an old order with the same items
     {"address": "elsewhere"},                             # another address
     {"names": ("Something Else",)},                       # no item overlap
+    {"total": 90},                                        # e.g. an order made in the Swiggy app: another total
+    {"method": "UPIIntent"},                              # paid another way than ours (COD)
 ])
 def test_checkout_error_and_no_match_is_unknown_and_blocks_orders(env, recent):
     run(env.say("/order all"))
@@ -553,6 +576,26 @@ def test_checkout_error_and_no_match_is_unknown_and_blocks_orders(env, recent):
     assert env.line_statuses() == ["queued"] * 3 and env.conn.execute("SELECT count(*) FROM order_shares").fetchone()[0] == 0
     assert "/resolve 1 placed" in env.outbox.sent[-1].text
     assert "/resolve 1 placed|failed" in run(env.say("/order all"))
+
+
+def test_verify_allows_a_rupee_of_rounding_in_the_total(env):
+    run(env.say("/order all"))
+    env.swiggy.checkout_mode = "unavailable"
+    env.swiggy.add_recent("ORD5", total=float(env.swiggy.last_to_pay) + 0.5)
+    run(env.tap("o:1:c"))
+    assert (env.order(1)["status"], env.order(1)["swiggy_order_id"]) == ("placed", "ORD5")
+
+
+def test_verify_never_guesses_between_two_matching_orders(env):
+    run(env.say("/order all"))
+    env.swiggy.checkout_mode = "unavailable"
+    env.swiggy.add_recent("ORD1")
+    env.swiggy.add_recent("ORD2")
+    run(env.tap("o:1:c"))
+    o = env.order(1)
+    assert (o["status"], o["swiggy_order_id"]) == ("unknown", None)
+    assert env.line_statuses() == ["queued"] * 3
+    assert "/resolve 1 placed" in env.outbox.sent[-1].text
 
 
 def test_logged_out_during_checkout_that_cannot_verify_is_unknown(env):

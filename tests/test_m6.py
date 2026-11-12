@@ -132,6 +132,20 @@ def test_recovery_removes_pay_button_and_records_a_match_as_placed(conn):
     assert any("✅ Ordered by Priya" in t for _, m, t in env.outbox.edited if m == 1000)  # the card
 
 
+def test_recovery_matches_on_the_total_sent_to_checkout(conn):
+    """A re-quote may change the total within PRICE_TOLERANCE; verify after a restart uses the checkout total."""
+    seed_queue(conn)
+    env = Env(conn)
+    rec = in_flight(env)
+    bill = json.loads(env.order(1)["bill_json"])
+    env.conn.execute("UPDATE orders SET bill_json=? WHERE id=1",
+                     (json.dumps({**bill, "checkout_to_pay": bill["to_pay"] + 1000}),))
+    env.swiggy.add_recent("SW2", total=(bill["to_pay"] + 1000) / 100, method="Cash")
+    env.swiggy.add_recent("SW3", total=bill["to_pay"] / 100, method="Cash", names=("Other",))
+    recover(env, rec)
+    assert (env.order(1)["status"], env.order(1)["swiggy_order_id"]) == ("placed", "SW2")
+
+
 def test_recovery_no_match_posts_the_resolve_message(conn):
     seed_queue(conn)
     env = Env(conn)

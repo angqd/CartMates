@@ -23,6 +23,7 @@ from cartmates.telegram.outbox import Outbox, UrlButton
 log = logging.getLogger(__name__)
 
 VERIFY_SLACK = timedelta(minutes=2)
+TOTAL_SLACK_PAISE = 100  # Swiggy's order total may round differently from the quote
 LOGGED_OUT_TEXT = "Swiggy logged out; log in and run /order again"
 Answer = Callable[[str | None], Awaitable[None]]
 MIN_POLL_S = 2.0       # never poll Swiggy faster than this, whatever it asks for
@@ -139,6 +140,9 @@ class OrderExecutor:
                                                   f"to {rupees(q.to_pay_paise)}.")
             return
         self._move(order_id, "checking_out")
+        # The exact total sent to checkout, so verify can match on it even after a restart.
+        self.conn.execute("UPDATE orders SET bill_json=json_set(COALESCE(bill_json, '{}'), '$.checkout_to_pay', ?) "
+                          "WHERE id=?", (q.to_pay_paise, order_id))
         self.checkout_error = None
         out = await self._checkout_or_verify(order, proposal, tapper, q, method)
         if out.kind == "failed":
@@ -314,9 +318,18 @@ class OrderExecutor:
         return row[0] if row else None
 
     async def _verify(self, order: sqlite3.Row, proposal: list[sqlite3.Row]) -> str | None:
+        """Find our order in Swiggy's recent orders after an unclear checkout. A known Swiggy id (UPI) matches
+        exactly. Otherwise an order must match on everything we know: live, created after the claim, our
+        address, our total (within a rupee), our payment method and most of our item names. The list covers
+        the whole Swiggy account, including orders made in the Swiggy app, so two matches are never guessed
+        between: that returns None and a human decides with /resolve."""
         claimed = datetime.fromisoformat(order["claimed_at"])
         ours = {l["name"].casefold() for l in proposal}
         known = order["swiggy_order_id"] or self._pending_swiggy_id(order["id"])
+        bill = json.loads(order["bill_json"] or "{}")
+        expected = bill.get("checkout_to_pay", bill.get("to_pay"))
+        upi = order["payment_method"] == "upi"
+        matches = []
         for recent in await cart.recent_orders(self.swiggy, 5):
             if not recent.live:  # a failed, cancelled or unpaid order was not placed
                 continue
@@ -326,9 +339,17 @@ class OrderExecutor:
                 continue
             if not cart.same_address(recent.address_id, self.address_id):
                 continue
+            if expected is None or recent.total_paise is None or abs(recent.total_paise - expected) > TOTAL_SLACK_PAISE:
+                continue
+            if recent.is_upi != upi:
+                continue
             if _overlap(ours, recent.item_names):
-                return recent.order_id
-        return None
+                matches.append(recent.order_id)
+        if len(matches) > 1:
+            log.warning("order #%s: %d Swiggy orders match, not guessing", order["id"], len(matches))
+            tracing.event("verify_ambiguous", order_id=order["id"], matches=len(matches))
+            return None
+        return matches[0] if matches else None
 
     # ---- restart recovery (DESIGN 7.4) ----
 
