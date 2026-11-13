@@ -648,7 +648,6 @@ Dockerfile               # at the repo root, so `docker compose up` needs no fla
 .dockerignore
 compose.yml              # volume ./data:/data, restart: unless-stopped
 docs/DESIGN.md
-instamart_poc/           # kept as-is for live probing
 ```
 
 Decided: the old prototype (`app/`, `scripts/`, `tests/`, `setup.sh`) moves to `legacy/` when the build starts. Its
@@ -662,7 +661,8 @@ Decided: the old prototype (`app/`, `scripts/`, `tests/`, `setup.sh`) moves to `
   - a stub Telegram;
   - a scripted LLM that returns fixed tool calls, so the tests are deterministic.
 - **Executor tests** cover each failure path: double Confirm, drift, out of stock, checkout error, and restart mid-order.
-- **Live smoke:** `instamart_poc/probe.py` stays the tool for checking the real server. No automated test places
+- **Live smoke:** `instamart_poc/probe.py` stays the tool for checking the real server. It and the POC recordings
+  cited in sections 7.1 and 7.3 live in the Queuify repo; CartMates doesn't need them to build or test. No automated test places
   a real order.
 - **Agent quality:** a small eval set of real phrasings ("the usual milk", "2 maggi for me and rohan",
   "actually make it 3") run against the real OpenAI model before each prompt change.
