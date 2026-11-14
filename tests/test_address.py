@@ -54,13 +54,12 @@ def buttons(env):
 
 # ---- helper ----
 
-def test_helper_falls_back_to_env_and_kv_overrides(conn):
-    assert address.current(conn, None) is None
-    assert address.current(conn, "env1") == "env1"
+def test_helper_reads_kv_only(conn):
+    assert address.current(conn) is None
     address.set_current(conn, "kv1")
-    assert address.current(conn, "env1") == "kv1"
+    assert address.current(conn) == "kv1"
     address.set_current(conn, "kv2")
-    assert address.current(conn, "env1") == "kv2"
+    assert address.current(conn) == "kv2"
 
 
 # ---- the command ----
@@ -107,7 +106,7 @@ def test_any_member_switches_announces_and_supersedes_an_open_proposal(env):
     env.conn.execute("INSERT INTO kv (key, value) VALUES ('address_label', ?)",
                      (json.dumps({"id": ADDRESS, "label": "Flat 12"}),))
     run(env.tap(f"a:{NEW}", user=ROHAN, message_id=555))
-    assert address.current(env.conn, ADDRESS) == NEW
+    assert address.current(env.conn) == NEW
     assert env.conn.execute("SELECT value FROM kv WHERE key='address_label'").fetchone() is None
     o = env.order(1)
     assert (o["status"], o["error"]) == ("superseded", "address changed")
@@ -159,7 +158,7 @@ def test_tampered_or_stale_id_is_rejected(env):
     assert env.outbox.answers[-1] == ("tap", "That address is no longer saved", False)
     run(env.tap("a:"))
     assert env.outbox.answers[-1][1] == "That address is no longer saved"
-    assert address.current(env.conn, ADDRESS) == ADDRESS
+    assert address.current(env.conn) == ADDRESS
     assert env.outbox.sent == []
 
 

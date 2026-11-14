@@ -1,26 +1,39 @@
-"""The household group's chat id (DESIGN 7.4). Kept in kv under `group_id`; TELEGRAM_GROUP_ID in `.env`
-is only the starting value. If Telegram upgrades the group to a supergroup its id changes, and the new
-one is stored here. Everything that needs the id calls current() when it uses it."""
-import logging
+"""The household group's chat id (DESIGN 7.4, 17.2). It lives in registry.chats. If Telegram upgrades the
+group to a supergroup its id changes and the registry row moves with it. Everything that needs the id
+calls current() when it uses it."""
 import sqlite3
 
-log = logging.getLogger(__name__)
+from cartmates import registry
 
 
-def current(conn: sqlite3.Connection | None, default: int | None = None) -> int | None:
-    row = conn.execute("SELECT value FROM kv WHERE key='group_id'").fetchone() if conn else None
-    return int(row[0]) if row else default
+class GroupChat:
+    """The chat registered for one household, read from the registry each time."""
+
+    def __init__(self, reg: sqlite3.Connection, household_id: int):
+        self.reg, self.household_id = reg, household_id
+
+    def current(self) -> int | None:
+        return registry.chat_for(self.reg, self.household_id)
+
+    def record_migration(self, new_id: int) -> None:
+        registry.remap_chat(self.reg, self.household_id, new_id)
 
 
-def set_current(conn: sqlite3.Connection, group_id: int) -> None:
-    conn.execute("INSERT INTO kv (key, value) VALUES ('group_id', ?) "
-                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(group_id),))
+class FixedGroup:
+    """A chat id held in memory: tests, and setup mode (None)."""
+
+    def __init__(self, chat_id: int | None):
+        self.chat_id = chat_id
+
+    def current(self) -> int | None:
+        return self.chat_id
+
+    def record_migration(self, new_id: int) -> None:
+        self.chat_id = new_id
 
 
-def record_migration(conn: sqlite3.Connection, new_id: int) -> None:
-    """The group became a supergroup: use the new id from now on and ask the host to update .env."""
-    if current(conn) == new_id:
-        return
-    set_current(conn, new_id)
-    log.warning("the group was upgraded to a supergroup; its new chat id is %s. "
-                "Update TELEGRAM_GROUP_ID in .env to %s (the stored id is used until then)", new_id, new_id)
+Group = GroupChat | FixedGroup
+
+
+def wrap(group: "int | None | Group") -> "Group":
+    return group if isinstance(group, (GroupChat, FixedGroup)) else FixedGroup(group)

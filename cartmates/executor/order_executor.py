@@ -48,17 +48,17 @@ class _Unconfirmed(Exception):
 
 class OrderExecutor:
     def __init__(self, conn: sqlite3.Connection, outbox: Outbox, swiggy: SwiggyClient,
-                 default_address_id: str | None = None, price_tolerance: float = 0.05,
+                 price_tolerance: float = 0.05,
                  upi_app: str = "gpay://upi/", sleep=asyncio.sleep, clock=time.monotonic,
                  checkout_timeout_s: float = 45.0):
         self.upi_app, self.sleep, self.clock = upi_app, sleep, clock
         self.checkout_timeout_s = checkout_timeout_s
         self.conn, self.outbox, self.swiggy = conn, outbox, swiggy
-        self.default_address_id, self.tolerance = default_address_id, price_tolerance  # env fallback only
+        self.tolerance = price_tolerance
 
     @property
     def address_id(self) -> str | None:
-        return address.current(self.conn, self.default_address_id)
+        return address.current(self.conn)
 
     # ---- state ----
 

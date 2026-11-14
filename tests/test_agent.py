@@ -11,7 +11,7 @@ from cartmates.agent.llm import LLMTurn, LLMUnavailable, ScriptedLLM, ToolCall
 from cartmates.agent.loop import APOLOGY_DOWN, APOLOGY_TOO_LONG, MAX_ROUNDS
 from cartmates.agent.prompt import SYSTEM_PROMPT
 from cartmates.agent.tools import SCHEMAS
-from cartmates.domain import queue
+from cartmates.domain import address, queue
 from cartmates.handlers import Handlers
 from cartmates.lane import Lane
 from cartmates.store import db
@@ -53,8 +53,8 @@ class AgentFlow:
         self.conn = rig.conn
         self.llm = ScriptedLLM(turns)
         self.outbox = FakeOutbox()
-        self.handlers = Handlers(rig.conn, self.outbox, GROUP, rig.auth, rig.client,
-                                 "aaaa1111bbbb2222cccc__FAKEsuffix123", self.llm, 199)
+        address.set_current(rig.conn, "aaaa1111bbbb2222cccc__FAKEsuffix123")
+        self.handlers = Handlers(rig.conn, self.outbox, GROUP, rig.auth, rig.client, self.llm, 199)
         self.lane = Lane(self.handlers.handle, self.outbox)
         self.handlers.resubmit = self.lane.submit
         self.adapter = TelegramAdapter(self.lane, self.outbox, GROUP, BOT_ID, BOT_NAME)

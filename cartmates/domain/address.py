@@ -1,11 +1,11 @@
-"""The household's delivery address (DESIGN 7.2). Kept in kv; the env value is only the starting point.
+"""The household's delivery address (DESIGN 7.2). Kept in kv.
 Everything that needs the address calls current() when it uses it, so a switch applies at once."""
 import sqlite3
 
 
-def current(conn: sqlite3.Connection, default: str | None = None) -> str | None:
+def current(conn: sqlite3.Connection) -> str | None:
     row = conn.execute("SELECT value FROM kv WHERE key='address_id'").fetchone()
-    return (row[0] if row else None) or default or None
+    return (row[0] if row else None) or None
 
 
 def set_current(conn: sqlite3.Connection, address_id: str) -> None:

@@ -1,11 +1,10 @@
 import logging
 import re
-import sqlite3
 
 from telegram import Update
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
-from cartmates.domain import group
+from cartmates.domain import group as group_mod
 from cartmates.lane import Lane
 from cartmates.telegram.events import CallbackTap, Message
 from cartmates.telegram.gate import is_for_bot, parse_command
@@ -19,18 +18,17 @@ ALLOWED_UPDATES = ["message", "callback_query"]
 class TelegramAdapter:
     """Turns PTB updates into events and submits them to the lane."""
 
-    def __init__(self, lane: Lane, outbox: Outbox, group_id: int | None,
-                 bot_id: int, bot_username: str, conn: sqlite3.Connection | None = None):
+    def __init__(self, lane: Lane, outbox: Outbox, group: "int | None | group_mod.Group",
+                 bot_id: int, bot_username: str):
         self.lane = lane
         self.outbox = outbox
-        self._group_default = group_id  # the .env value; None with nothing in kv means setup mode
-        self.conn = conn  # for the group id that kv may override (DESIGN 7.4)
+        self.group = group_mod.wrap(group)  # current() None means setup mode
         self.bot_id = bot_id
         self.bot_username = bot_username
 
     @property
     def group_id(self) -> int | None:
-        return group.current(self.conn, self._group_default)
+        return self.group.current()
 
     def register(self, app: Application) -> None:
         app.add_handler(MessageHandler(filters.StatusUpdate.MIGRATE, self.on_migrate))
@@ -42,12 +40,12 @@ class TelegramAdapter:
         again in the new one (migrate_from_chat_id); either is enough, and only for our group."""
         msg = update.effective_message
         current = self.group_id
-        if not msg or not self.conn or current is None:
+        if not msg or current is None:
             return
         if msg.migrate_to_chat_id and msg.chat.id == current:
-            group.record_migration(self.conn, msg.migrate_to_chat_id)
+            self.group.record_migration(msg.migrate_to_chat_id)
         elif msg.migrate_from_chat_id and msg.migrate_from_chat_id == current:
-            group.record_migration(self.conn, msg.chat.id)
+            self.group.record_migration(msg.chat.id)
 
     async def on_update(self, update: Update, context: ContextTypes.DEFAULT_TYPE | None = None) -> None:
         if update.callback_query:
@@ -75,8 +73,7 @@ class TelegramAdapter:
             if command and command[0] == "status" and chat.type in ("group", "supergroup"):
                 await self.outbox.send(
                     chat.id,
-                    f"Setup: this chat's id is {chat.id}. "
-                    "Put it in .env as TELEGRAM_GROUP_ID and restart.",
+                    f"This chat's id is {chat.id}. No household is set up for it yet.",
                     reply_to=msg.message_id,
                 )
             return

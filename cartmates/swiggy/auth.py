@@ -11,18 +11,16 @@ Never log a token, code, verifier or pasted URL.
 import asyncio
 import base64
 import hashlib
-import json
 import logging
-import os
 import secrets
 import sqlite3
 import time
 from collections.abc import Callable
-from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 
+from cartmates.store.secrets import SecretStore
 from cartmates.swiggy.errors import LoggedOut, LoginError, SwiggyUnavailable
 
 log = logging.getLogger(__name__)
@@ -40,10 +38,10 @@ def _challenge(verifier: str) -> str:
 
 
 class SwiggyAuth:
-    def __init__(self, tokens_dir: Path, conn: sqlite3.Connection | None = None,
+    def __init__(self, store: SecretStore, conn: sqlite3.Connection | None = None,
                  transport: httpx.AsyncBaseTransport | None = None,
                  clock: Callable[[], float] = time.time):
-        self.path = Path(tokens_dir) / "swiggy.json"
+        self.store = store
         self.conn = conn
         self._transport = transport
         self._clock = clock
@@ -52,28 +50,22 @@ class SwiggyAuth:
     # ---- token store ----
 
     def _load(self) -> dict:
-        try:
-            return json.loads(self.path.read_text())
-        except FileNotFoundError:
-            return {}
+        # A missing key or a wrong key reads as no tokens: the household is logged out.
+        return self.store.get("swiggy") or {}
 
     def _save(self, data: dict) -> None:
-        # Temp file + rename, so a crash never leaves half a token file.
-        tmp = self.path.with_suffix(".tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as f:
-            json.dump(data, f)
-        os.replace(tmp, self.path)
+        self.store.put("swiggy", data)
 
     def _set_state(self, state: str) -> None:
         if self.conn:
             self.conn.execute("UPDATE kv SET value=? WHERE key='auth_state'", (state,))
 
     def logged_in(self) -> bool:
-        return bool(self._load().get("refresh_token") or self._load().get("access_token"))
+        data = self._load()
+        return bool(data.get("refresh_token") or data.get("access_token"))
 
     def sync_state(self) -> str:
-        """Set kv auth_state from the token file. Local only; no network."""
+        """Set kv auth_state from the stored tokens. Local only; no network."""
         state = "logged_in" if self.logged_in() else "logged_out"
         self._set_state(state)
         return state

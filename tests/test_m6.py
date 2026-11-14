@@ -11,7 +11,9 @@ from telegram.error import ChatMigrated, NetworkError
 
 from cartmates.__main__ import cleanup_ticker, recover_stuck_orders
 from cartmates.agent.llm import ScriptedLLM
-from cartmates.domain import group, pending
+from cartmates import registry
+from cartmates.domain import pending
+from cartmates.domain.group import FixedGroup, GroupChat
 from cartmates.handlers import Handlers
 from cartmates.lane import Lane
 from cartmates.swiggy.errors import LoggedOut
@@ -282,35 +284,54 @@ def migrate_update(chat_id=GROUP, to=NEW_GROUP):
         "migrate_to_chat_id": to}}, BOT)
 
 
-def test_migrate_to_chat_id_switches_the_group_and_old_id_is_ignored(conn, caplog):
+@pytest.fixture
+def reg():
+    r = registry.open(":memory:")
+    hh = registry.create_household(r)
+    assert hh == 1
+    registry.map_chat(r, hh, GROUP)
+    return r
+
+
+def chats(reg):
+    return [tuple(row) for row in reg.execute("SELECT platform, chat_id, household_id FROM chats")]
+
+
+def test_upgrade_seen_by_the_adapter_moves_the_chat_and_old_id_is_ignored(conn, reg, caplog):
     outbox = FakeOutbox()
     caplog.set_level(logging.WARNING)
+    chat = GroupChat(reg, 1)
 
     async def go():
-        handlers = Handlers(conn, outbox, GROUP)
+        handlers = Handlers(conn, outbox, chat)
         lane = Lane(handlers.handle, outbox)
-        adapter = TelegramAdapter(lane, outbox, GROUP, BOT_ID, BOT_NAME, conn)
+        adapter = TelegramAdapter(lane, outbox, chat, BOT_ID, BOT_NAME)
         lane.start()
         await adapter.on_migrate(migrate_update())
+        await adapter.on_migrate(migrate_update())  # a second notice changes nothing
         await adapter.on_update(make_update("/list", entities=cmd("/list"), chat_id=GROUP))
         await adapter.on_update(make_update("/list", entities=cmd("/list"), chat_id=NEW_GROUP))
         await asyncio.sleep(0.05)
         await lane.stop()
         return handlers
     handlers = run(go())
-    assert group.current(conn) == NEW_GROUP and handlers.group_id == NEW_GROUP
+    assert chats(reg) == [("telegram", NEW_GROUP, 1)]
+    assert registry.household_for(reg, NEW_GROUP) == 1 and registry.household_for(reg, GROUP) is None
+    assert handlers.group_id == NEW_GROUP
     assert [(s.chat_id, s.text) for s in outbox.sent] == [(NEW_GROUP, "Queue is empty.")]
-    assert any("TELEGRAM_GROUP_ID" in r.getMessage() and str(NEW_GROUP) in r.getMessage()
-               and r.levelno == logging.WARNING for r in caplog.records)
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1 and str(GROUP) in warnings[0] and str(NEW_GROUP) in warnings[0]
+    assert ".env" not in warnings[0]
 
 
-def test_migrate_message_from_another_chat_is_ignored(conn):
+def test_migrate_message_from_another_chat_is_ignored(conn, reg):
     async def go():
-        adapter = TelegramAdapter(Lane(Handlers(conn, FakeOutbox(), GROUP).handle, FakeOutbox()),
-                                  FakeOutbox(), GROUP, BOT_ID, BOT_NAME, conn)
+        chat = GroupChat(reg, 1)
+        adapter = TelegramAdapter(Lane(Handlers(conn, FakeOutbox(), chat).handle, FakeOutbox()),
+                                  FakeOutbox(), chat, BOT_ID, BOT_NAME)
         await adapter.on_migrate(migrate_update(chat_id=555))
     run(go())
-    assert group.current(conn) is None
+    assert chats(reg) == [("telegram", GROUP, 1)]
 
 
 class FakeBot:
@@ -329,14 +350,16 @@ class FakeBot:
             raise ChatMigrated(NEW_GROUP)
 
 
-def test_chat_migrated_on_send_retries_once_to_the_new_id_and_stores_it(conn):
+def test_chat_migrated_on_send_retries_once_to_the_new_id_and_stores_it(reg):
     bot = FakeBot()
-    outbox = TelegramOutbox(bot, lambda new: group.record_migration(conn, new))
+    chat = GroupChat(reg, 1)
+    outbox = TelegramOutbox(bot, chat.record_migration)
     assert run(outbox.send(GROUP, "hi")) == 42
     assert bot.calls == [("send", GROUP), ("send", NEW_GROUP)]
-    assert group.current(conn) == NEW_GROUP
-    run(outbox.edit(GROUP, 5, "x"))
+    assert chats(reg) == [("telegram", NEW_GROUP, 1)] and chat.current() == NEW_GROUP
+    run(outbox.edit(GROUP, 5, "x"))  # the second upgrade notice changes nothing
     assert bot.calls[-2:] == [("edit", GROUP), ("edit", NEW_GROUP)]
+    assert chats(reg) == [("telegram", NEW_GROUP, 1)]
 
 
 def test_chat_migrated_is_retried_only_once(conn):
@@ -351,11 +374,18 @@ def test_chat_migrated_is_retried_only_once(conn):
     assert len(bot.calls) == 2
 
 
-def test_stored_group_id_overrides_env_value_and_setup_mode_is_unchanged(conn):
-    group.set_current(conn, NEW_GROUP)
-    assert Handlers(conn, FakeOutbox(), GROUP).group_id == NEW_GROUP
-    fresh = TelegramAdapter(None, FakeOutbox(), None, BOT_ID, BOT_NAME)
-    assert fresh.group_id is None  # no conn, no env id: setup mode
+def test_group_is_read_from_the_registry_and_setup_mode_is_unchanged(conn, reg):
+    assert Handlers(conn, FakeOutbox(), GroupChat(reg, 1)).group_id == GROUP
+    registry.remap_chat(reg, 1, NEW_GROUP)
+    assert Handlers(conn, FakeOutbox(), GroupChat(reg, 1)).group_id == NEW_GROUP
+    assert TelegramAdapter(None, FakeOutbox(), GroupChat(reg, 2), BOT_ID, BOT_NAME).group_id is None
+    assert TelegramAdapter(None, FakeOutbox(), None, BOT_ID, BOT_NAME).group_id is None  # setup mode
+
+
+def test_fixed_group_records_a_migration_in_memory():
+    fixed = FixedGroup(GROUP)
+    fixed.record_migration(NEW_GROUP)
+    assert fixed.current() == NEW_GROUP
 
 
 # ---- 6. expired pending cleanup ----
@@ -383,7 +413,7 @@ def test_cleanup_event_runs_on_the_lane_and_the_ticker_submits_and_cancels_clean
         async def sleep(_):
             await ticks.put(None)
             await asyncio.sleep(0)
-        task = asyncio.create_task(cleanup_ticker(lane, conn, GROUP, every=3600, sleep=sleep))
+        task = asyncio.create_task(cleanup_ticker(lane, FixedGroup(GROUP), every=3600, sleep=sleep))
         await ticks.get()
         await asyncio.sleep(0.05)
         task.cancel()

@@ -66,8 +66,9 @@ def test_migration_006_applies_on_an_existing_db_and_keeps_rows(tmp_path):
 def test_app_boots_and_stops_cleanly_on_sigterm(tmp_path):
     code, output = run_app(tmp_path)
     assert code == 0
-    assert (tmp_path / "cartmates.db").exists()
-    assert (tmp_path / "tokens").is_dir()
+    assert (tmp_path / "registry.db").exists()  # a clean install: an empty registry, setup mode
+    assert (tmp_path / "households").is_dir() and not any((tmp_path / "households").iterdir())
+    assert not (tmp_path / "cartmates.db").exists() and not (tmp_path / "tokens").exists()
     assert "cartmates stopped" in output
 
 

@@ -8,6 +8,7 @@ from telegram.error import NetworkError, TimedOut
 
 from cartmates.agent import memory
 from cartmates.agent.llm import ScriptedLLM
+from cartmates.domain import address
 from cartmates.handlers import Handlers
 from cartmates.lane import Lane
 from cartmates.telegram.adapter import TelegramAdapter
@@ -84,8 +85,9 @@ def test_a_question_send_that_fails_once_goes_out_on_retry(rig):
 
     async def go():
         outbox = TelegramOutbox(bot, sleep=nap)
+        address.set_current(rig.conn, "aaaa1111bbbb2222cccc__FAKEsuffix123")
         llm = ScriptedLLM(two_adds_then_question())
-        h = Handlers(rig.conn, outbox, GROUP, rig.auth, rig.client, "aaaa1111bbbb2222cccc__FAKEsuffix123", llm, 199)
+        h = Handlers(rig.conn, outbox, GROUP, rig.auth, rig.client, llm, 199)
         lane = Lane(h.handle, outbox)
         lane.start()
         from test_agent import MENTION

@@ -216,4 +216,4 @@ def test_setup_mode_replies_with_chat_id_only_to_status(conn):
         make_update("/status", entities=cmd("/status"), chat_id=7, chat_type="private"),
     ], group_id=None)
     assert [s.text for s in out.sent] == [
-        f"Setup: this chat's id is {GROUP}. Put it in .env as TELEGRAM_GROUP_ID and restart."]
+        f"This chat's id is {GROUP}. No household is set up for it yet."]

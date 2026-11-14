@@ -13,7 +13,7 @@ import pytest
 
 from cartmates import observe
 from cartmates.agent.llm import LLMTurn, ScriptedLLM, ToolCall
-from cartmates.domain import orders, queue
+from cartmates.domain import address, orders, queue
 from cartmates.handlers import Handlers
 from cartmates.lane import Lane
 from cartmates.store import db
@@ -169,7 +169,8 @@ class Env:
         self.conn = conn
         self.swiggy = FakeSwiggy()
         self.outbox = FakeOutbox()
-        self.h = Handlers(conn, self.outbox, GROUP, None, self.swiggy, ADDRESS, llm, 199, price_tolerance=0.05)
+        address.set_current(conn, ADDRESS)
+        self.h = Handlers(conn, self.outbox, GROUP, None, self.swiggy, llm, 199, price_tolerance=0.05)
         self.mid = 100
 
     async def say(self, text, user=PRIYA):

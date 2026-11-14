@@ -13,7 +13,8 @@ from telegram.error import NetworkError
 
 from cartmates.agent.errors import TurnFailedAfterChanges, done_so_far
 from cartmates.agent.loop import run_turn
-from cartmates.domain import address, group, nudge, orders, pending, queue
+from cartmates.domain import address, nudge, orders, pending, queue
+from cartmates.domain import group as group_mod
 from cartmates.domain.orders import OrderError
 from cartmates.domain.queue import QueueError
 from cartmates.executor.order_executor import OrderExecutor
@@ -70,33 +71,32 @@ _looks_like_paste = observe.looks_like_paste  # shared with tracing, which must 
 
 
 class Handlers:
-    def __init__(self, conn: sqlite3.Connection, outbox: Outbox, group_id: int,
+    def __init__(self, conn: sqlite3.Connection, outbox: Outbox, group: "int | group_mod.Group",
                  auth: SwiggyAuth | None = None, swiggy: SwiggyClient | None = None,
-                 address_id: str | None = None, llm: LLM | None = None,
+                 llm: LLM | None = None,
                  free_delivery_min: int = 199, llm_missing: str = "OPENAI_API_KEY",
                  price_tolerance: float = 0.05, upi_app: str = "gpay://upi/",
                  checkout_timeout_s: float = 45.0):
         self.conn = conn
         self.outbox = outbox
-        self._group_default = group_id  # the .env value; the live one is self.group_id
+        self.group = group_mod.wrap(group)  # the live id is self.group_id
         self.auth = auth
         self.swiggy = swiggy
-        self.address_id = address_id  # the .env starting value; the live one is self._address()
         self.llm = llm
         self.free_delivery_min = free_delivery_min
         self.llm_missing = llm_missing  # which setting to name when the assistant is off
-        self.executor = OrderExecutor(conn, outbox, swiggy, address_id, price_tolerance,
+        self.executor = OrderExecutor(conn, outbox, swiggy, price_tolerance,
                                        upi_app=upi_app, checkout_timeout_s=checkout_timeout_s) if swiggy else None
         self.resubmit = None  # set to lane.submit once the lane exists
         self._replaying: set[int] = set()  # message ids already logged before they were parked
 
     def _address(self) -> str | None:
-        return address.current(self.conn, self.address_id)
+        return address.current(self.conn)
 
     @property
     def group_id(self) -> int | None:
-        """Read at use time: a supergroup upgrade stores a new id in kv (DESIGN 7.4)."""
-        return group.current(self.conn, self._group_default)
+        """Read at use time: a supergroup upgrade moves the registry row (DESIGN 7.4)."""
+        return self.group.current()
 
     async def handle(self, event: Event) -> None:
         if event.chat_id != self.group_id:
@@ -215,7 +215,7 @@ class Handlers:
         if not self.llm:
             return f"The assistant isn't configured ({self.llm_missing})."
         try:
-            await run_turn(conn=self.conn, llm=self.llm, swiggy=self.swiggy, address_id=self._address(),
+            await run_turn(conn=self.conn, llm=self.llm, swiggy=self.swiggy,
                            outbox=self.outbox, event=event, text=text, free_delivery_min=self.free_delivery_min)
         except NetworkError as e:  # run_turn only lets this out when nothing was changed
             log.warning("agent turn failed on the network, nothing changed: %s", e)

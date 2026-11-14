@@ -38,7 +38,7 @@ async def run_turn(**kwargs) -> None:
         await _run_turn(sp, **kwargs)
 
 
-async def _run_turn(sp, *, conn: sqlite3.Connection, llm: LLM, swiggy, address_id: str | None, outbox: Outbox,
+async def _run_turn(sp, *, conn: sqlite3.Connection, llm: LLM, swiggy, outbox: Outbox,
                    event: Message, text: str, free_delivery_min: int, now: datetime | None = None) -> None:
     """Run the agent for one message and post the reply. Changes made by tools are already
     committed and each is also recorded as an action line; they stay even if a later round fails.
@@ -49,7 +49,7 @@ async def _run_turn(sp, *, conn: sqlite3.Connection, llm: LLM, swiggy, address_i
     TurnFailedAfterChanges (actions kept), without it the user row and a "(failed: ...)" assistant row
     are stored and the original exception propagates."""
     now = now or datetime.now(timezone.utc)
-    tools = Toolbox(conn, swiggy, address.current(conn, address_id), outbox, event.chat_id, event.message_id,
+    tools = Toolbox(conn, swiggy, address.current(conn), outbox, event.chat_id, event.message_id,
                     event.user_id, event.display_name, now)
     replied_to = event.reply_to_message_id if event.reply_to_bot else None
     speaker = memory.speaker_label(conn, event.display_name, event.user_id, replied_to)

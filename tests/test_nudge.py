@@ -146,7 +146,7 @@ def test_skipped_when_the_bot_knows_it_is_logged_out(conn):
 
 def test_skipped_without_an_address(conn):
     env = make(conn, update_qty(1, 2))
-    env.h.address_id = None
+    conn.execute("DELETE FROM kv WHERE key='address_id'")
     run(env.say("make the eggs 2"))
     assert env.swiggy.n("update_cart") == 0 and cards(env) == []
 

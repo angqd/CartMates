@@ -5,16 +5,18 @@ import base64
 import hashlib
 import json
 import logging
-import stat
 from urllib.parse import parse_qs, urlparse
 
 import httpx
 import httpx2
 import pytest
+from cryptography.fernet import Fernet
 
+from cartmates.domain import address
 from cartmates.handlers import Handlers
 from cartmates.lane import Lane
 from cartmates.store import db
+from cartmates.store.secrets import SecretStore
 from cartmates.swiggy import catalog
 from cartmates.swiggy.auth import REDIRECT_URI, SwiggyAuth
 from cartmates.swiggy.client import REQUIRED_TOOLS, SwiggyClient
@@ -162,12 +164,11 @@ def conn(tmp_path):
 
 class Rig:
     def __init__(self, tmp_path, conn, mcp_token="access-1"):
-        (tmp_path / "tokens").mkdir()
         self.conn = conn
         self.server = FakeAuthServer()
         self.mcp = FakeMcp(mcp_token)
         self.now = 1_000_000.0
-        self.auth = SwiggyAuth(tmp_path / "tokens", conn, httpx.MockTransport(self.server), lambda: self.now)
+        self.auth = SwiggyAuth(SecretStore(conn, Fernet.generate_key().decode()), conn, httpx.MockTransport(self.server), lambda: self.now)
         self.sleeps: list[float] = []
 
         async def sleep(s):
@@ -216,7 +217,7 @@ def test_authorize_url_has_pkce_state_redirect_scope_and_resource(rig):
     assert q["resource"] == "https://mcp.swiggy.com"
 
 
-def test_finish_login_exchanges_code_and_saves_tokens_0600(rig):
+def test_finish_login_exchanges_code_and_saves_tokens_encrypted(rig):
     async def go():
         url, state, verifier = await rig.auth.start_login()
         await rig.auth.finish_login(f"{REDIRECT_URI}?code=the-code&state={state}", state, verifier)
@@ -228,8 +229,8 @@ def test_finish_login_exchanges_code_and_saves_tokens_0600(rig):
     data = rig.auth._load()
     assert data["access_token"] == "access-1" and data["refresh_token"] == "refresh-1"
     assert data["expires_at"] == rig.now + 432000
-    assert stat.S_IMODE(rig.auth.path.stat().st_mode) == 0o600
-    assert [p.name for p in rig.auth.path.parent.iterdir()] == ["swiggy.json"]  # no temp file left
+    (raw,) = rig.conn.execute("SELECT ciphertext FROM secrets WHERE name='swiggy'").fetchone()
+    assert b"access-1" not in raw and b"refresh-1" not in raw
     assert kv(rig.conn, "auth_state") == "logged_in"
 
 
@@ -381,7 +382,11 @@ class Flow:
     def __init__(self, rig, address_id=ADDRESS):
         self.rig = rig
         self.outbox = FakeOutbox()
-        self.handlers = Handlers(rig.conn, self.outbox, GROUP, rig.auth, rig.client, address_id)
+        if address_id:
+            address.set_current(rig.conn, address_id)
+        else:
+            rig.conn.execute("DELETE FROM kv WHERE key='address_id'")
+        self.handlers = Handlers(rig.conn, self.outbox, GROUP, rig.auth, rig.client)
         self.lane = Lane(self.handlers.handle, self.outbox)
         self.handlers.resubmit = self.lane.submit
         self.adapter = TelegramAdapter(self.lane, self.outbox, GROUP, BOT_ID, BOT_NAME)
