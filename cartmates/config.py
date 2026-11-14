@@ -24,6 +24,7 @@ class Config:
     otel_endpoint: str | None = None   # OTLP/HTTP base URL, e.g. http://phoenix:6006; unset = tracing off
     trace_content: bool = True         # record prompts, tool args and results in spans
     trace_max_chars: int = 8000
+    master_key: str | None = None      # Fernet key that encrypts per-household secrets
 
     @property
     def db_path(self) -> Path:
@@ -32,6 +33,21 @@ class Config:
     @property
     def tokens_dir(self) -> Path:
         return self.data_dir / "tokens"
+
+    @property
+    def registry_path(self) -> Path:
+        return self.data_dir / "registry.db"
+
+    @property
+    def households_dir(self) -> Path:
+        return self.data_dir / "households"
+
+    @property
+    def backups_dir(self) -> Path:
+        return self.data_dir / "backups"
+
+    def household_db(self, household_id: int) -> Path:
+        return self.households_dir / f"{household_id}.db"
 
 
 def _optional(name: str) -> str | None:
@@ -64,4 +80,5 @@ def load_config() -> Config:
         otel_endpoint=_optional("OTEL_EXPORTER_OTLP_ENDPOINT"),
         trace_content=(os.environ.get("CARTMATES_TRACE_CONTENT") or "1").strip().lower() not in ("0", "false", "no", "off"),
         trace_max_chars=int(os.environ.get("CARTMATES_TRACE_MAX_CHARS") or 8000),
+        master_key=_optional("CARTMATES_MASTER_KEY"),
     )

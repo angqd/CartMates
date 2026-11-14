@@ -92,6 +92,6 @@ def test_migration_007_backfills_one_to_n(tmp_path):
     for status in ("queued", "removed", "queued", "ordered", "queued"):
         c.execute("INSERT INTO queue_lines (spin_id, name, qty, added_by, added_at, status) "
                   "VALUES ('s', 'n', 1, 1, 'x', ?)", (status,))
-    assert db.migrate(c) == ["007_queue_slot"]
+    assert db.migrate(c) == ["007_queue_slot", "008_secrets"]
     assert [tuple(r) for r in c.execute("SELECT id, slot FROM queue_lines ORDER BY id")] == \
         [(1, 1), (2, None), (3, 2), (4, None), (5, 3)]

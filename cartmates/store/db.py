@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
+REGISTRY_MIGRATIONS_DIR = Path(__file__).parent / "registry_migrations"
 
 
 def connect(path: Path | str) -> sqlite3.Connection:
@@ -20,7 +21,7 @@ def connect(path: Path | str) -> sqlite3.Connection:
     return conn
 
 
-def migrate(conn: sqlite3.Connection) -> list[str]:
+def migrate(conn: sqlite3.Connection, migrations_dir: Path = MIGRATIONS_DIR) -> list[str]:
     """Apply migrations that have not run yet. Returns the versions applied."""
     conn.execute(
         "CREATE TABLE IF NOT EXISTS schema_migrations "
@@ -28,7 +29,7 @@ def migrate(conn: sqlite3.Connection) -> list[str]:
     )
     done = {row["version"] for row in conn.execute("SELECT version FROM schema_migrations")}
     applied = []
-    for file in sorted(MIGRATIONS_DIR.glob("*.sql")):
+    for file in sorted(migrations_dir.glob("*.sql")):
         if file.stem in done:
             continue
         # One transaction per migration: a failure leaves no half-applied schema.

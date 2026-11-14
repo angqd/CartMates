@@ -40,7 +40,7 @@ def run_app(data_dir):
 def test_migrate_creates_schema_and_is_idempotent(tmp_path):
     conn = db.connect(tmp_path / "t.db")
     assert db.migrate(conn) == ["001_init", "002_orders", "003_order_address", "004_payment", "005_trace_id",
-                                  "006_reply_threading", "007_queue_slot"]
+                                  "006_reply_threading", "007_queue_slot", "008_secrets"]
 
     names = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert TABLES <= names
@@ -57,7 +57,7 @@ def test_migration_006_applies_on_an_existing_db_and_keeps_rows(tmp_path):
         conn.executescript(file.read_text())
         conn.execute("INSERT INTO schema_migrations VALUES (?, 'x')", (file.stem,))
     conn.execute("INSERT INTO chat_memory (ts, role, text) VALUES ('t', 'assistant', 'old reply')")
-    assert db.migrate(conn) == ["006_reply_threading", "007_queue_slot"]
+    assert db.migrate(conn) == ["006_reply_threading", "007_queue_slot", "008_secrets"]
     row = conn.execute("SELECT text, to_user_id, message_id FROM chat_memory").fetchone()
     assert tuple(row) == ("old reply", None, None)
     assert "message_id" in [r["name"] for r in conn.execute("PRAGMA table_info(pending)")]
