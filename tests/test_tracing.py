@@ -254,3 +254,62 @@ def test_order_confirm_span_has_state_events(orders_conn, spans):
     for step in ("claimed", "quoting", "checking_out", "pay_link_sent", "paid", "placed"):
         assert step in names
     assert names.index("claimed") < names.index("quoting") < names.index("checking_out") < names.index("placed")
+
+
+def _run_lane(household_id):
+    import logging
+    from cartmates.lane import Lane
+    from cartmates.telegram.events import CleanupPending
+    from cartmates.telegram.outbox import FakeOutbox
+    seen = []
+
+    class Grab(logging.Handler):
+        def emit(self, record):
+            seen.append(record)
+    h = Grab()
+    h.addFilter(observe.TurnIdFilter())
+
+    async def handler(event):
+        logging.getLogger("t").warning("inside")
+
+    async def go():
+        lane = Lane(handler, FakeOutbox(), **({} if household_id is None else {"household_id": household_id}))
+        lane.start()
+        await lane.submit(CleanupPending(GROUP))
+        await asyncio.sleep(0.1)
+        await lane.stop()
+    logging.getLogger("t").addHandler(h)
+    try:
+        asyncio.run(go())
+    finally:
+        logging.getLogger("t").removeHandler(h)
+    return seen
+
+
+def test_lane_with_household_tags_span_and_logs(spans):
+    seen = _run_lane(7)
+    (root,) = spans.get_finished_spans()
+    assert root.attributes["session.id"] == "hh-7" and root.attributes["cartmates.household_id"] == 7
+    assert root.attributes["cartmates.chat_id"] == GROUP
+    assert [r.household for r in seen] == ["hh-7"]
+
+
+def test_lane_without_household_uses_the_chat_id(spans):
+    seen = _run_lane(None)
+    (root,) = spans.get_finished_spans()
+    assert root.attributes["session.id"] == str(GROUP)
+    assert "cartmates.household_id" not in root.attributes
+    assert [r.household for r in seen] == ["-"]
+
+
+def test_outbox_migration_callback_gets_old_and_new_ids():
+    from telegram.error import ChatMigrated
+
+    class Bot:
+        async def send_message(self, chat, *a, **k):
+            if chat == GROUP:
+                raise ChatMigrated(-1009)
+            return type("R", (), {"message_id": 1})()
+    got = []
+    asyncio.run(TelegramOutbox(Bot(), lambda old, new: got.append((old, new))).send(GROUP, "hi"))
+    assert got == [(GROUP, -1009)]

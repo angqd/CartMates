@@ -930,8 +930,10 @@ With no v1 file (a clean install), boot creates an empty `registry.db` and house
 ### 17.4 Routing and limits
 
 **`LaneRouter`** (4a):
-- `route(platform, chat_id)` → household id, or none. Unknown group: one reply ("This group isn't set up. Ask the
-  host for an invite code, then send /setup <code>"), at most once a day per chat. No LLM call, no file opened.
+- `route(platform, chat_id)` → household id, or none. Unknown group: a reply with the chat id ("This group isn't
+  set up yet (chat id -100…). Ask the host to add it."), sent every time with no rate limit, since Telegram only
+  delivers commands, mentions and replies to the bot (decided 2026-11-24). M11 changes the text to point at
+  `/setup <code>`. No LLM call, no file opened.
 - Private chats (1c): only `/start <login code>`, the login paste and `/setup` helpers. Anything else gets "I only
   work in your household group." A queue action is never taken from a private chat.
 - A lane is created on first event, stopped after 30 min with nothing queued. The router's hourly ticker sends
@@ -1007,13 +1009,59 @@ Each milestone keeps every existing test passing, and the flat's CartMates group
 | # | Builds | Proven by |
 |---|---|---|
 | **M8** Registry, silo files, switch | `registry.db` schema (all four tables; `invites` and `login_links` stay empty until M11); `households/<id>.db`; migration 008; secrets encryption; the boot pass; the switch in 17.3. The group id moves from `kv` to `registry.chats`, including the supergroup remap (pulled forward from M9, since `TELEGRAM_GROUP_ID` leaves `.env`). The `SWIGGY_ADDRESS_ID` fallback goes. Still one lane, now found through the registry. | `test_switch.py` and `test_registry.py`: a v1 fixture DB migrates to the expected registry rows and file; running it twice changes nothing; a crash after each step (injected) then a rerun gives the same result; no plaintext token file is left; the backup exists. A household with a corrupt file is `broken` and a second household still boots. A wrong master key leaves that household logged out. With no v1 file, boot creates an empty registry. Manual: the switch run on a copy of the group's `cartmates.db` first, then for real, and the group used normally afterwards. |
-| **M9** LaneRouter | `LaneRouter`, one `Handlers` per household, idle stop, running-lanes-only ticker, unknown-chat reply, private-chat refusal, `hh-<id>` in spans and logs | `test_households.py`, two households in one process with the fakes: messages interleaved A, B, A, B add lines only to their own file; each turn's handler holds only its own connection (the test wraps `db.connect` and checks); a slow turn in A (blocked fake LLM) doesn't delay B; order inside A stays FIFO; an idle lane stops and restarts on the next message with its data intact; an unknown group gets one reply and the scripted LLM gets no call; a supergroup upgrade in A keeps A's household id. A test asserts no `await` happens inside `db.transaction` (the context manager fails if the running coroutine yields). |
+| **M9** LaneRouter | `LaneRouter`, one `Handlers` per household, idle stop, running-lanes-only ticker, unknown-chat reply, private-chat refusal, broken-household reply, `hh-<id>` in spans and logs, `cartmates.admin add-household`. Details in 17.8.1. | `test_households.py`, two households in one process with the fakes: messages interleaved A, B, A, B add lines only to their own file; each turn's handler holds only its own connection (the test wraps `db.connect` and checks); a slow turn in A (blocked fake LLM) doesn't delay B; order inside A stays FIFO; an idle lane stops and restarts on the next message with its data intact; an unknown group gets the reply with its chat id on every message and the scripted LLM gets no call; a private chat gets the refusal; a broken household's group gets its reply and other households still work; a supergroup upgrade in A keeps A's household id; `add-household` makes a household the running bot serves without a restart. `tests/test_no_await_in_transaction.py` (added 2026-11-24) scans the source and fails on any `await`, `async with` or `async for` inside `db.transaction`. |
 | **M10** Shared limits and usage stats | LLM semaphore; migrations 009-010 (usage per turn, Swiggy call counter); `llm.py` also reads cached and reasoning tokens; the token budget; `/api-stats` with the output in 15.2, and cost from `.env` prices | With `LLM_CONCURRENCY=2` and four households, at most two fake model calls run at once. Over budget: free text gets the limit reply, `/order` and Confirm still go through; usage rows commit with the turn, and a turn that fails before commit adds none. `/api-stats` with fake usage rows: the totals, cached share, median per turn, heaviest turn and cost per placed order match hand-computed numbers; it makes no LLM call; household A's stats never include B's rows; with no prices set, the ₹ figures are left out rather than shown as ₹0. |
 | **M11** Onboarding and private login | `cartmates.admin invite` and `usage`; `/setup`; private-chat login with `login_links`; replace-login confirmation; setup address step; `my_chat_member` handling; `/forget`; 30-day deletion. A household file that `/setup` creates gets `kv.v1_switch_done`, so the switch (17.3) never treats it as the v1 file. | End to end with fakes: invite → `/setup` → private login → address → "Ready" → first add. A used, expired or made-up code is refused. No group message ever contains the Swiggy authorize URL. A login paste in the group is refused and not used. Replacing a login needs a confirm tap. Removing the bot makes the household `inactive`; at day 30 (injected clock) the file is gone, the row is `deleted`, and a new household gets a new id. |
 | **M12** Live check with two households | The flat's CartMates group (household 1) and a test group (household 2, onboarded with an invite), each logged in to its own Swiggy account (the test group uses a second account of the host's) | Checklist: both groups add and list at the same time without crossing; a COD order placed in the test group and cancelled straight away in the Swiggy app; both groups `/order` at the same moment and each card shows only its own items; Phoenix shows `hh-1` and `hh-2` sessions; `cartmates.admin usage` matches the turns. |
 
 No automated test calls a Swiggy write tool on the real server (section 7.1). M12 is the only real order, placed
 by hand.
+
+### 17.8.1 M9 build details
+
+Decided 2026-11-24.
+
+**Router** (`cartmates/router.py`, `LaneRouter`). The adapter hands every event to the router instead of one lane.
+- It looks up the chat with `registry.household_for` on every event, so a household added while the bot runs is
+  served straight away.
+- Each running household has a `Lane`, a `Handlers`, its own connection to `households/<id>.db` and a
+  `GroupChat(reg, id)`.
+- A lane starts on the household's first event: open the file, build `Handlers`, run `CleanupPending`, then the
+  event.
+- A lane stops after `LANE_IDLE_S` (default 1800) with no event and nothing queued. Stopping closes its connection.
+- The hourly cleanup goes only to running lanes.
+- Boot: the boot pass already runs per household. A household with orders recovered at boot starts its lane
+  straight away so the recovery notice gets posted. The others wait for their first event.
+- Shutdown stops every running lane, as `Lane.stop` does today.
+
+**Replies outside a household.** None of these call the LLM or open a household file.
+- Unknown group: the text in 17.4, on every message.
+- Private chat: "I only work in your household group." M11 adds `/start <code>` and the login paste here.
+- Group of a `broken` household: "This group's data can't be opened right now. The host has been told." It's
+  logged at ERROR once per boot.
+
+**Supergroup upgrade.** The adapter's `on_migrate` and the outbox's migration callback both receive the old and
+the new chat id. The router finds the household by the old id and calls `registry.remap_chat`. `GroupChat`
+reads the registry, so the running lane sends to the new id from then on.
+
+**Household tags.** A context variable `observe.household_id` is set by the lane worker for each event.
+- Log lines read `[hh-<id> <turn_id>]`, or `[- -]` outside a lane event.
+- Every span that sets `session.id` uses `hh-<id>` when the variable is set, and the chat id otherwise. The root
+  event span also gets `cartmates.household_id`.
+
+**Adding a household before M11.** `python -m cartmates.admin add-household <chat_id>`:
+- creates the registry row and `households/<id>.db` with migrations applied and `kv.v1_switch_done` set;
+- maps the chat, prints the new id, and refuses a chat that's already mapped;
+- runs next to the live bot, because the registry is in WAL mode.
+
+The new group then runs `/login` and `/address` as the flat's group did in v1. This command is for the host only
+and is used for the M12 test group. `/setup` with invites replaces it for real households in M11.
+
+**Work split.**
+1. Sonnet: the household tags, and the migration callback carrying both ids.
+2. Opus: the router, the adapter and `__main__` wiring, and `add-household`.
+3. A separate Opus agent: `test_households.py`, written from this section.
+4. The orchestrator reviews, runs the suite, and commits.
 
 ### 17.9 Open questions
 

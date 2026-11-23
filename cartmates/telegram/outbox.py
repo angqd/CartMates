@@ -88,20 +88,20 @@ def _with_mentions(text: str, mentions: list[Mention]) -> str:
 def _message_span(name: str, chat_id: int, text: str):
     """Chat id, length and (content capture on) the text. Never the bot token. Text that holds a link
     is left out: it can be the Swiggy login link."""
-    span = tracing.span(name, tracing.CHAIN, {"session.id": str(chat_id), "telegram.text_length": len(text)})
+    span = tracing.span(name, tracing.CHAIN, {"session.id": tracing.session_id(chat_id), "telegram.text_length": len(text)})
     return span, ("http" not in text)
 
 
 class TelegramOutbox:
-    def __init__(self, bot: Bot, on_migrated: Callable[[int], None] | None = None,
+    def __init__(self, bot: Bot, on_migrated: Callable[[int, int], None] | None = None,
                  sleep: Callable[[float], Awaitable[None]] = asyncio.sleep):
         self._bot = bot
         self._sleep = sleep  # injectable so tests don't wait out the backoff
-        self._on_migrated = on_migrated  # told the new chat id when Telegram says the group moved
+        self._on_migrated = on_migrated  # told (old, new) chat ids when Telegram says the group moved
 
-    def _moved(self, e: ChatMigrated) -> int:
+    def _moved(self, old_chat_id: int, e: ChatMigrated) -> int:
         if self._on_migrated:
-            self._on_migrated(e.new_chat_id)
+            self._on_migrated(old_chat_id, e.new_chat_id)
         return e.new_chat_id
 
     async def _retry(self, call: Callable[[], Awaitable[T]], retry_timeouts: bool) -> T:
@@ -137,7 +137,7 @@ class TelegramOutbox:
             try:
                 return await attempt(chat_id)
             except ChatMigrated as e:  # the group became a supergroup: retry once to the new id
-                return await attempt(self._moved(e))
+                return await attempt(self._moved(chat_id, e))
 
     async def edit(self, chat_id: int, message_id: int, text: str,
                    buttons: Buttons | None = None) -> None:
@@ -154,7 +154,7 @@ class TelegramOutbox:
             try:
                 await attempt(chat_id)
             except ChatMigrated as e:
-                await attempt(self._moved(e))
+                await attempt(self._moved(chat_id, e))
 
     async def answer_tap(self, tap_id: str, text: str | None = None, alert: bool = False) -> None:
         # Answering twice is harmless, so a TimedOut answer is retried as well.

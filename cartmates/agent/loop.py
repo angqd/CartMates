@@ -33,7 +33,7 @@ async def run_turn(**kwargs) -> None:
     """The agent turn inside an "agent.turn" span; see _run_turn for the arguments."""
     event: Message = kwargs["event"]
     with tracing.span("agent.turn", tracing.AGENT,
-                      {"session.id": str(event.chat_id), "user.id": str(event.user_id)}) as sp:
+                      {"session.id": tracing.session_id(event.chat_id), "user.id": str(event.user_id)}) as sp:
         tracing.set_text(sp, "input.value", kwargs["text"])
         await _run_turn(sp, **kwargs)
 

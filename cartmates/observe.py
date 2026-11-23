@@ -6,6 +6,7 @@ from contextvars import ContextVar
 from opentelemetry import trace
 
 turn_id: ContextVar[str | None] = ContextVar("turn_id", default=None)
+household_id: ContextVar[int | None] = ContextVar("household_id", default=None)
 
 
 def start_turn() -> str:
@@ -15,10 +16,12 @@ def start_turn() -> str:
 
 
 class TurnIdFilter(logging.Filter):
-    """Adds %(turn_id)s and %(trace_id)s to every record; "-" outside a lane event."""
+    """Adds %(household)s, %(turn_id)s and %(trace_id)s to every record; "-" outside a lane event."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         record.turn_id = turn_id.get() or "-"
+        hh = household_id.get()
+        record.household = "-" if hh is None else f"hh-{hh}"
         record.trace_id = current_trace_id() or "-"
         return True
 

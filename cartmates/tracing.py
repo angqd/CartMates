@@ -135,9 +135,17 @@ def traced(name: str, kind: str | None = CHAIN, attrs: Callable[..., dict] | Non
     return wrap
 
 
+def session_id(chat_id: int) -> str:
+    """The trace session: the household when a lane event has one, else the chat id."""
+    hh = observe.household_id.get()
+    return str(chat_id) if hh is None else f"hh-{hh}"
+
+
 def event_span(event_obj):
     """The root span of one lane event."""
-    attrs: dict = {"session.id": str(event_obj.chat_id), "cartmates.chat_id": event_obj.chat_id}
+    attrs: dict = {"session.id": session_id(event_obj.chat_id), "cartmates.chat_id": event_obj.chat_id}
+    if observe.household_id.get() is not None:
+        attrs["cartmates.household_id"] = observe.household_id.get()
     user = getattr(event_obj, "user_id", None)
     if user is not None:
         attrs["user.id"] = str(user)

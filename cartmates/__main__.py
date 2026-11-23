@@ -94,7 +94,7 @@ async def run(config: Config, group: Group, conn: sqlite3.Connection | None,
         me = await app.bot.get_me()
         # The Telegram "/" menu comes from the same list as /help, so the two never drift.
         await app.bot.set_my_commands([BotCommand(name, desc) for name, desc in menu_commands()])
-        outbox = TelegramOutbox(app.bot, group.record_migration)
+        outbox = TelegramOutbox(app.bot, lambda old, new: group.record_migration(new))
         group_id = group.current()
         if conn is None or group_id is None:
             log.warning("no household group is registered: setup mode, send /status in the group, "
@@ -147,7 +147,7 @@ def main() -> int:
     config = load_config()
     logging.basicConfig(
         level=config.log_level.upper(),
-        format="%(asctime)s %(levelname)s %(name)s [%(turn_id)s]: %(message)s",
+        format="%(asctime)s %(levelname)s %(name)s [%(household)s %(turn_id)s]: %(message)s",
     )
     # The filter goes on the handler so records from every logger get a turn_id.
     for handler in logging.getLogger().handlers:

@@ -353,7 +353,7 @@ class FakeBot:
 def test_chat_migrated_on_send_retries_once_to_the_new_id_and_stores_it(reg):
     bot = FakeBot()
     chat = GroupChat(reg, 1)
-    outbox = TelegramOutbox(bot, chat.record_migration)
+    outbox = TelegramOutbox(bot, lambda old, new: chat.record_migration(new))
     assert run(outbox.send(GROUP, "hi")) == 42
     assert bot.calls == [("send", GROUP), ("send", NEW_GROUP)]
     assert chats(reg) == [("telegram", NEW_GROUP, 1)] and chat.current() == NEW_GROUP

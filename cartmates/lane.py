@@ -14,7 +14,8 @@ Handler = Callable[[Event], Awaitable[None]]
 class Lane:
     """One FIFO queue and one worker, so events are handled strictly one at a time."""
 
-    def __init__(self, handler: Handler, outbox: Outbox):
+    def __init__(self, handler: Handler, outbox: Outbox, *, household_id: int | None = None):
+        self._household_id = household_id
         self._handler = handler
         self._outbox = outbox
         self._queue: asyncio.Queue[Event | None] = asyncio.Queue()
@@ -35,6 +36,7 @@ class Lane:
             event = await self._queue.get()
             if event is None:  # wake-up sentinel from stop()
                 break
+            observe.household_id.set(self._household_id)
             with tracing.event_span(event) as sp:
                 sp.set_attribute("cartmates.turn_id", observe.start_turn())
                 text = getattr(event, "text", None)

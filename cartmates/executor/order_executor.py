@@ -85,7 +85,7 @@ class OrderExecutor:
 
     @tracing.traced("order.confirm", attrs=lambda self, order_id, tapper, answer=None, method="cod": {
         "cartmates.order_id": order_id, "cartmates.payment_method": method, "user.id": str(tapper.user_id),
-        "session.id": str(tapper.chat_id)})
+        "session.id": tracing.session_id(tapper.chat_id)})
     async def confirm(self, order_id: int, tapper: CallbackTap, answer: Answer | None = None,
                       method: str = "cod") -> None:
         """`answer` is called once, right after the claim, with a toast text (None = plain).
@@ -361,7 +361,7 @@ class OrderExecutor:
                 log.warning("could not edit message %s", message_id, exc_info=True)
 
     @tracing.traced("order.recover_unknown", attrs=lambda self, order_id, chat_id, logged_in: {
-        "cartmates.order_id": order_id, "session.id": str(chat_id), "cartmates.logged_in": logged_in})
+        "cartmates.order_id": order_id, "session.id": tracing.session_id(chat_id), "cartmates.logged_in": logged_in})
     async def recover_unknown(self, order_id: int, chat_id: int, logged_in: bool) -> None:
         """An order that was checking out when the bot stopped: take the Pay button away, then ask Swiggy
         (same rules as verify) unless logged out. A match is recorded as placed; otherwise a human decides."""
@@ -399,7 +399,7 @@ class OrderExecutor:
         await self.outbox.send(chat_id, f"Order #{order_id} did go through before the restart.\n{text}")
 
     @tracing.traced("order.recover_failed", attrs=lambda self, order_id, chat_id: {
-        "cartmates.order_id": order_id, "session.id": str(chat_id)})
+        "cartmates.order_id": order_id, "session.id": tracing.session_id(chat_id)})
     async def recover_failed(self, order_id: int, chat_id: int) -> None:
         """An order that never reached checkout: nothing was ordered and its lines are still queued."""
         order = self.conn.execute("SELECT card_message_id FROM orders WHERE id=?", (order_id,)).fetchone()
