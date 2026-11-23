@@ -9,16 +9,16 @@ import httpx2
 import pytest
 from telegram.error import ChatMigrated, NetworkError
 
-from cartmates.__main__ import cleanup_ticker, recover_stuck_orders
+from cartmates.__main__ import recover_stuck_orders
 from cartmates.agent.llm import ScriptedLLM
 from cartmates import registry
 from cartmates.domain import pending
 from cartmates.domain.group import FixedGroup, GroupChat
 from cartmates.handlers import Handlers
-from cartmates.lane import Lane
 from cartmates.swiggy.errors import LoggedOut
 from cartmates.telegram.adapter import TelegramAdapter
-from cartmates.telegram.events import Recover
+from cartmates.router import LaneRouter
+from cartmates.telegram.events import Message, Recover
 from cartmates.telegram.outbox import FakeOutbox, TelegramOutbox
 from cartmates.telegram.polling import PollingErrorLogger
 from tests.test_orders import GROUP, PRIYA, ROHAN, Env, FakeSwiggy, conn, run, seed_queue  # noqa: F401
@@ -297,27 +297,31 @@ def chats(reg):
     return [tuple(row) for row in reg.execute("SELECT platform, chat_id, household_id FROM chats")]
 
 
+def router_for(reg, conn, outbox, **kw):
+    """A real LaneRouter whose household 1 is the fixture's file."""
+    return LaneRouter(reg, outbox, lambda hid, c, group: Handlers(c, outbox, group), lambda hid: conn, **kw)
+
+
 def test_upgrade_seen_by_the_adapter_moves_the_chat_and_old_id_is_ignored(conn, reg, caplog):
     outbox = FakeOutbox()
     caplog.set_level(logging.WARNING)
-    chat = GroupChat(reg, 1)
 
     async def go():
-        handlers = Handlers(conn, outbox, chat)
-        lane = Lane(handlers.handle, outbox)
-        adapter = TelegramAdapter(lane, outbox, chat, BOT_ID, BOT_NAME)
-        lane.start()
+        router = router_for(reg, conn, outbox)
+        adapter = TelegramAdapter(router, BOT_ID, BOT_NAME)
         await adapter.on_migrate(migrate_update())
         await adapter.on_migrate(migrate_update())  # a second notice changes nothing
         await adapter.on_update(make_update("/list", entities=cmd("/list"), chat_id=GROUP))
         await adapter.on_update(make_update("/list", entities=cmd("/list"), chat_id=NEW_GROUP))
         await asyncio.sleep(0.05)
-        await lane.stop()
+        handlers = router.handlers_for(1)
+        await router.stop()
         return handlers
     handlers = run(go())
     assert chats(reg) == [("telegram", NEW_GROUP, 1)]
     assert registry.household_for(reg, NEW_GROUP) == 1 and registry.household_for(reg, GROUP) is None
     assert handlers.group_id == NEW_GROUP
+    # The old id is dropped quietly; the new id still reaches household 1.
     assert [(s.chat_id, s.text) for s in outbox.sent] == [(NEW_GROUP, "Queue is empty.")]
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1 and str(GROUP) in warnings[0] and str(NEW_GROUP) in warnings[0]
@@ -326,9 +330,7 @@ def test_upgrade_seen_by_the_adapter_moves_the_chat_and_old_id_is_ignored(conn, 
 
 def test_migrate_message_from_another_chat_is_ignored(conn, reg):
     async def go():
-        chat = GroupChat(reg, 1)
-        adapter = TelegramAdapter(Lane(Handlers(conn, FakeOutbox(), chat).handle, FakeOutbox()),
-                                  FakeOutbox(), chat, BOT_ID, BOT_NAME)
+        adapter = TelegramAdapter(router_for(reg, conn, FakeOutbox()), BOT_ID, BOT_NAME)
         await adapter.on_migrate(migrate_update(chat_id=555))
     run(go())
     assert chats(reg) == [("telegram", GROUP, 1)]
@@ -362,6 +364,13 @@ def test_chat_migrated_on_send_retries_once_to_the_new_id_and_stores_it(reg):
     assert chats(reg) == [("telegram", NEW_GROUP, 1)]
 
 
+def test_a_send_that_must_not_follow_a_migration_gives_up(reg):
+    bot, moved = FakeBot(), []
+    outbox = TelegramOutbox(bot, lambda old, new: moved.append((old, new)))
+    assert run(outbox.send(GROUP, "not for the new chat", follow_migration=False)) is None
+    assert bot.calls == [("send", GROUP)] and moved == []
+
+
 def test_chat_migrated_is_retried_only_once(conn):
     bot = FakeBot(fail_for=None)
 
@@ -374,12 +383,11 @@ def test_chat_migrated_is_retried_only_once(conn):
     assert len(bot.calls) == 2
 
 
-def test_group_is_read_from_the_registry_and_setup_mode_is_unchanged(conn, reg):
+def test_group_is_read_from_the_registry(conn, reg):
     assert Handlers(conn, FakeOutbox(), GroupChat(reg, 1)).group_id == GROUP
     registry.remap_chat(reg, 1, NEW_GROUP)
     assert Handlers(conn, FakeOutbox(), GroupChat(reg, 1)).group_id == NEW_GROUP
-    assert TelegramAdapter(None, FakeOutbox(), GroupChat(reg, 2), BOT_ID, BOT_NAME).group_id is None
-    assert TelegramAdapter(None, FakeOutbox(), None, BOT_ID, BOT_NAME).group_id is None  # setup mode
+    assert GroupChat(reg, 2).current() is None
 
 
 def test_fixed_group_records_a_migration_in_memory():
@@ -400,26 +408,39 @@ def test_expired_variant_and_scope_questions_are_deleted_but_login_stays(conn):
     assert [r[0] for r in conn.execute("SELECT kind FROM pending ORDER BY id")] == ["scope", "login"]
 
 
-def test_cleanup_event_runs_on_the_lane_and_the_ticker_submits_and_cancels_cleanly(conn):
-    conn.execute("INSERT INTO pending (user_id, kind, payload_json, created_at, expires_at) "
-                 "VALUES (1, 'variant', '{}', 'x', '2000-01-01T00:00:00+00:00')")
+def test_the_ticker_cleans_up_running_lanes_only_and_cancels_cleanly(conn, reg):
     outbox = FakeOutbox()
 
+    def expired_question():
+        conn.execute("INSERT INTO pending (user_id, kind, payload_json, created_at, expires_at) "
+                     "VALUES (1, 'variant', '{}', 'x', '2000-01-01T00:00:00+00:00')")
+
+    def questions():
+        return conn.execute("SELECT count(*) FROM pending").fetchone()[0]
+
     async def go():
-        lane = Lane(Handlers(conn, outbox, GROUP).handle, outbox)
-        lane.start()
         ticks = asyncio.Queue()
 
-        async def sleep(_):
+        async def sleep(seconds):
+            if seconds != 3600:  # the idle check: never fires here
+                await asyncio.Event().wait()
             await ticks.put(None)
             await asyncio.sleep(0)
-        task = asyncio.create_task(cleanup_ticker(lane, FixedGroup(GROUP), every=3600, sleep=sleep))
+        router = router_for(reg, conn, outbox, sleep=sleep)
+        router.start()
+        expired_question()
         await ticks.get()
         await asyncio.sleep(0.05)
-        task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
-        assert task.cancelled() or task.done()
-        await lane.stop()
+        assert router.running == set() and questions() == 1  # no lane is running, so nothing woke
+        await router.submit(Message(GROUP, 3, 1, "Priya", "/list", True, "list"))
+        await asyncio.sleep(0.05)
+        assert router.running == {1} and questions() == 0  # a starting lane cleans up first
+        expired_question()
+        await ticks.get()
+        await asyncio.sleep(0.05)
+        assert questions() == 0  # the ticker reached the running lane
+        tasks = list(router._tasks)
+        await router.stop()
+        assert all(t.done() for t in tasks) and router.running == set()
     run(go())
-    assert conn.execute("SELECT count(*) FROM pending").fetchone()[0] == 0
-    assert outbox.sent == []
+    assert [s.text for s in outbox.sent] == ["Queue is empty."]

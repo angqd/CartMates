@@ -20,7 +20,7 @@ class GroupChat:
 
 
 class FixedGroup:
-    """A chat id held in memory: tests, and setup mode (None)."""
+    """A chat id held in memory: tests."""
 
     def __init__(self, chat_id: int | None):
         self.chat_id = chat_id

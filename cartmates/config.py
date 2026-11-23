@@ -25,6 +25,7 @@ class Config:
     trace_content: bool = True         # record prompts, tool args and results in spans
     trace_max_chars: int = 8000
     master_key: str | None = None      # Fernet key that encrypts per-household secrets
+    lane_idle_s: float = 1800.0        # a household's lane stops after this long with nothing to do
 
     @property
     def db_path(self) -> Path:
@@ -81,4 +82,5 @@ def load_config() -> Config:
         trace_content=(os.environ.get("CARTMATES_TRACE_CONTENT") or "1").strip().lower() not in ("0", "false", "no", "off"),
         trace_max_chars=int(os.environ.get("CARTMATES_TRACE_MAX_CHARS") or 8000),
         master_key=_optional("CARTMATES_MASTER_KEY"),
+        lane_idle_s=float(os.environ.get("LANE_IDLE_S") or 1800),
     )

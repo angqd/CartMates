@@ -15,11 +15,10 @@ from cartmates.domain import address, queue
 from cartmates.handlers import Handlers
 from cartmates.lane import Lane
 from cartmates.store import db
-from cartmates.telegram.adapter import TelegramAdapter
 from cartmates.telegram.events import CallbackTap
 from cartmates.telegram.outbox import FakeOutbox
 from test_swiggy import Rig, kv, pending_login, command
-from test_telegram import BOT_ID, BOT_NAME, GROUP, make_update
+from test_telegram import BOT_ID, BOT_NAME, GROUP, adapter_for, make_update
 
 MENTION = [{"type": "mention", "offset": 0, "length": len("@CartMatesBot")}]
 # The fake catalog: p1v1 Farmfresh milk 500 ml x 4 (max 1), p1v2 1 L (out of stock), p2v1 Meadow Oat Drink (max 5).
@@ -57,7 +56,7 @@ class AgentFlow:
         self.handlers = Handlers(rig.conn, self.outbox, GROUP, rig.auth, rig.client, self.llm, 199)
         self.lane = Lane(self.handlers.handle, self.outbox)
         self.handlers.resubmit = self.lane.submit
-        self.adapter = TelegramAdapter(self.lane, self.outbox, GROUP, BOT_ID, BOT_NAME)
+        self.adapter = adapter_for(self.lane)
 
     async def __aenter__(self):
         self.lane.start()
@@ -564,7 +563,7 @@ def test_not_configured_and_bare_mention(rig):
 
     async def go():
         lane = Lane(Handlers(rig.conn, out, GROUP).handle, out)
-        adapter = TelegramAdapter(lane, out, GROUP, BOT_ID, BOT_NAME)
+        adapter = adapter_for(lane)
         lane.start()
         await adapter.on_update(make_update("@CartMatesBot add milk", entities=MENTION))
         await adapter.on_update(make_update("@CartMatesBot", entities=MENTION))

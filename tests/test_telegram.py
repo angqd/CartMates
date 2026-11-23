@@ -39,6 +39,27 @@ def cmd(name):
     return [{"type": "bot_command", "offset": 0, "length": len(name)}]
 
 
+class OneLane:
+    """Stands in for the LaneRouter in single-household tests: group events go to the one lane, the rest
+    are dropped. The real router is tested with households of its own."""
+
+    def __init__(self, lane, group):
+        from cartmates.domain import group as group_mod
+        self.lane, self.group = lane, group_mod.wrap(group)
+
+    async def submit(self, event, *, private=False):
+        if not private and event.chat_id == self.group.current():
+            await self.lane.submit(event)
+
+    def migrate(self, old_chat_id, new_chat_id):
+        if old_chat_id == self.group.current():
+            self.group.record_migration(new_chat_id)
+
+
+def adapter_for(lane, group=GROUP):
+    return TelegramAdapter(OneLane(lane, group), BOT_ID, BOT_NAME)
+
+
 @pytest.mark.parametrize("text, entities, reply, expected", [
     ("/list", cmd("/list"), False, True),
     ("/LIST", cmd("/LIST"), False, True),
@@ -137,7 +158,7 @@ def run_updates(conn, updates, group_id=GROUP):
 
     async def go():
         lane = Lane(Handlers(conn, outbox, group_id).handle, outbox)
-        adapter = TelegramAdapter(lane, outbox, group_id, BOT_ID, BOT_NAME)
+        adapter = adapter_for(lane, group_id)
         lane.start()
         for u in updates:
             await adapter.on_update(u)
@@ -209,11 +230,25 @@ def test_ungated_and_other_chat_are_ignored(conn):
     assert conn.execute("SELECT count(*) FROM members").fetchone()[0] == 0
 
 
-def test_setup_mode_replies_with_chat_id_only_to_status(conn):
-    out = run_updates(conn, [
-        make_update("/status", entities=cmd("/status")),
-        make_update("/list", entities=cmd("/list")),
-        make_update("/status", entities=cmd("/status"), chat_id=7, chat_type="private"),
-    ], group_id=None)
-    assert [s.text for s in out.sent] == [
-        f"This chat's id is {GROUP}. No household is set up for it yet."]
+def test_router_replies_to_an_unknown_group_every_time_and_refuses_private_chats(tmp_path):
+    """An empty registry: no household is opened and nothing reaches a lane."""
+    from cartmates import registry
+    from cartmates.router import PRIVATE_CHAT, UNKNOWN_GROUP, LaneRouter
+
+    reg = registry.open(tmp_path / "registry.db")
+    outbox = FakeOutbox()
+
+    def never(*a):
+        raise AssertionError("no household should be opened")
+
+    async def go():
+        adapter = TelegramAdapter(LaneRouter(reg, outbox, never, never), BOT_ID, BOT_NAME)
+        for u in (make_update("/status", entities=cmd("/status")), make_update("/list", entities=cmd("/list")),
+                  make_update("just chatting"),
+                  make_update("hello", chat_id=7, chat_type="private")):
+            await adapter.on_update(u)
+    asyncio.run(go())
+    assert [(s.chat_id, s.text) for s in outbox.sent] == [
+        (GROUP, UNKNOWN_GROUP.format(chat_id=GROUP)), (GROUP, UNKNOWN_GROUP.format(chat_id=GROUP)),
+        (7, PRIVATE_CHAT)]
+    assert f"chat id {GROUP}" in outbox.sent[0].text

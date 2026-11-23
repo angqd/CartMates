@@ -21,9 +21,8 @@ from cartmates.swiggy import catalog
 from cartmates.swiggy.auth import REDIRECT_URI, SwiggyAuth
 from cartmates.swiggy.client import REQUIRED_TOOLS, SwiggyClient
 from cartmates.swiggy.errors import LoggedOut, LoginError
-from cartmates.telegram.adapter import TelegramAdapter
 from cartmates.telegram.outbox import FakeOutbox
-from test_telegram import BOT_ID, BOT_NAME, GROUP, cmd, make_update
+from test_telegram import BOT_ID, BOT_NAME, GROUP, adapter_for, cmd, make_update
 
 ADDRESS = "aaaa1111bbbb2222cccc__FAKEsuffix123"
 
@@ -389,7 +388,7 @@ class Flow:
         self.handlers = Handlers(rig.conn, self.outbox, GROUP, rig.auth, rig.client)
         self.lane = Lane(self.handlers.handle, self.outbox)
         self.handlers.resubmit = self.lane.submit
-        self.adapter = TelegramAdapter(self.lane, self.outbox, GROUP, BOT_ID, BOT_NAME)
+        self.adapter = adapter_for(self.lane)
 
     async def __aenter__(self):
         self.lane.start()

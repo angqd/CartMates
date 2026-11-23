@@ -1038,11 +1038,19 @@ Decided 2026-11-24.
 - Unknown group: the text in 17.4, on every message.
 - Private chat: "I only work in your household group." M11 adds `/start <code>` and the login paste here.
 - Group of a `broken` household: "This group's data can't be opened right now. The host has been told." It's
-  logged at ERROR once per boot.
+  logged at ERROR once per boot. A household whose file fails to open when its lane starts is marked `broken` too.
+- A household that's `inactive` or `deleted` counts as unknown.
+- In a private chat every text message reaches the router, since there's no mention gate there.
+- Setup mode is gone. With an empty registry, every group gets the unknown-group reply, which carries the chat id
+  the old `/status` setup reply used to give.
 
 **Supergroup upgrade.** The adapter's `on_migrate` and the outbox's migration callback both receive the old and
 the new chat id. The router finds the household by the old id and calls `registry.remap_chat`. `GroupChat`
 reads the registry, so the running lane sends to the new id from then on.
+- The router remembers moved-from ids in memory and drops their events without a reply.
+- Replies outside a household never follow a `ChatMigrated` to another chat. Without both rules, a late message
+  from the old id would get the unknown-group reply, the outbox would forward it to the new id, and the
+  household's own group would read "This group isn't set up yet".
 
 **Household tags.** A context variable `observe.household_id` is set by the lane worker for each event.
 - Log lines read `[hh-<id> <turn_id>]`, or `[- -]` outside a lane event.
@@ -1051,7 +1059,9 @@ reads the registry, so the running lane sends to the new id from then on.
 
 **Adding a household before M11.** `python -m cartmates.admin add-household <chat_id>`:
 - creates the registry row and `households/<id>.db` with migrations applied and `kv.v1_switch_done` set;
-- maps the chat, prints the new id, and refuses a chat that's already mapped;
+- maps the chat last, so the bot never routes to a half-made household. If the file step fails, the row becomes
+  `deleted`, and the id is never reused;
+- prints the new id, and refuses a chat that's already mapped;
 - runs next to the live bot, because the registry is in WAL mode.
 
 The new group then runs `/login` and `/address` as the flat's group did in v1. This command is for the host only

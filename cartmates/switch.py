@@ -92,8 +92,8 @@ def _registry(config: Config) -> None:
         stored = _kv(src, "group_id")
         chat_id = int(stored) if stored else config.telegram_group_id
         if chat_id is None:
-            log.warning("household %s has no group chat yet (no kv.group_id, no TELEGRAM_GROUP_ID): setup mode",
-                        V1_HOUSEHOLD)
+            log.warning("household %s has no group chat yet (no kv.group_id, no TELEGRAM_GROUP_ID): "
+                        "no group reaches it", V1_HOUSEHOLD)
             return
         registry.map_chat(reg, V1_HOUSEHOLD, chat_id)
         log.info("household %s reaches chat %s", V1_HOUSEHOLD, chat_id)

@@ -57,7 +57,8 @@ Buttons = list[list[Button]]
 
 class Outbox(Protocol):
     async def send(self, chat_id: int, text: str, reply_to: int | None = None,
-                   buttons: Buttons | None = None, mentions: list[Mention] | None = None) -> int: ...
+                   buttons: Buttons | None = None, mentions: list[Mention] | None = None,
+                   follow_migration: bool = True) -> int | None: ...
     async def edit(self, chat_id: int, message_id: int, text: str,
                    buttons: Buttons | None = None) -> None: ...
     async def answer_tap(self, tap_id: str, text: str | None = None, alert: bool = False) -> None: ...
@@ -119,7 +120,8 @@ class TelegramOutbox:
         raise AssertionError("unreachable")
 
     async def send(self, chat_id: int, text: str, reply_to: int | None = None,
-                   buttons: Buttons | None = None, mentions: list[Mention] | None = None) -> int:
+                   buttons: Buttons | None = None, mentions: list[Mention] | None = None,
+                   follow_migration: bool = True) -> int | None:
         body, mode = (_with_mentions(text, mentions), "HTML") if mentions else (text, None)
 
         async def attempt(chat: int) -> int:
@@ -137,6 +139,10 @@ class TelegramOutbox:
             try:
                 return await attempt(chat_id)
             except ChatMigrated as e:  # the group became a supergroup: retry once to the new id
+                if not follow_migration:  # the text was meant for the old chat only
+                    log.warning("chat %s became %s; not following it, the message was dropped",
+                                chat_id, e.new_chat_id)
+                    return None
                 return await attempt(self._moved(chat_id, e))
 
     async def edit(self, chat_id: int, message_id: int, text: str,
@@ -193,7 +199,8 @@ class FakeOutbox:
         self._failures.append([when, exc, times])
 
     async def send(self, chat_id: int, text: str, reply_to: int | None = None,
-                   buttons: Buttons | None = None, mentions: list[Mention] | None = None) -> int:
+                   buttons: Buttons | None = None, mentions: list[Mention] | None = None,
+                   follow_migration: bool = True) -> int | None:
         attempt = Sent(chat_id, text, reply_to, buttons, mentions)
         for failure in self._failures:
             when, exc, left = failure

@@ -12,21 +12,18 @@ from cartmates import observe, registry, tracing
 from cartmates.agent.llm import OpenAILLM
 from cartmates.boot import Recovered, boot_pass, recover_stuck_orders  # noqa: F401 - tests import these here
 from cartmates.config import Config, load_config
-from cartmates.domain.group import FixedGroup, Group, GroupChat
+from cartmates.domain.group import GroupChat
 from cartmates.handlers import Handlers, menu_commands
-from cartmates.lane import Lane
+from cartmates.router import LaneRouter, household_opener
 from cartmates.store.secrets import SecretStore
 from cartmates.switch import SwitchError, switch_from_v1
 from cartmates.swiggy.auth import SwiggyAuth
 from cartmates.swiggy.client import SwiggyClient
 from cartmates.telegram.adapter import ALLOWED_UPDATES, TelegramAdapter
-from cartmates.telegram.events import CleanupPending, Recover
 from cartmates.telegram.outbox import TelegramOutbox
 from cartmates.telegram.polling import PollingErrorLogger
 
 log = logging.getLogger("cartmates")
-
-CLEANUP_EVERY_S = 3600
 
 NO_KEY = ("CARTMATES_MASTER_KEY is not set, and it is needed once a household exists. Generate one with\n"
           "  python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'\n"
@@ -60,22 +57,28 @@ def master_key_missing(config: Config) -> bool:
     return False
 
 
-async def _ignore(event) -> None:
-    pass
+def handlers_factory(config: Config, outbox: TelegramOutbox):
+    """How the router builds one household's Handlers: its own connection, Swiggy login and client, and the
+    shared LLM."""
+    llm, missing = None, "OPENAI_API_KEY"
+    if config.openai_api_key and config.agent_model:
+        llm = OpenAILLM(config.openai_api_key, config.agent_model, config.agent_reasoning_effort)
+    else:
+        missing = "AGENT_MODEL" if config.openai_api_key else missing
+        log.warning("%s is not set: free-text messages get a 'not configured' reply", missing)
+
+    def make(household_id: int, conn: sqlite3.Connection, group: GroupChat) -> Handlers:
+        # Built even when logged out, so /login can start the first login.
+        auth = SwiggyAuth(SecretStore(conn, config.master_key), conn)
+        log.info("household %s: swiggy auth: %s", household_id, auth.sync_state())  # local only, no Swiggy call
+        return Handlers(conn, outbox, group, auth, SwiggyClient(auth, config.swiggy_mcp_url),
+                        llm, config.free_delivery_min, missing, config.price_tolerance,
+                        config.upi_app, config.checkout_timeout_s)
+    return make
 
 
-async def cleanup_ticker(lane: Lane, group: Group, every: float = CLEANUP_EVERY_S, sleep=asyncio.sleep) -> None:
-    """Hourly: queue a cleanup event on the lane like any other. Cancelled at shutdown."""
-    while True:
-        await sleep(every)
-        chat_id = group.current()
-        if chat_id is not None:
-            await lane.submit(CleanupPending(chat_id))
-
-
-async def run(config: Config, group: Group, conn: sqlite3.Connection | None,
-              recovered: Recovered | None = None) -> None:
-    """Serve one household's group (M8 has one lane). conn None or no chat: setup mode."""
+async def run(config: Config, reg: sqlite3.Connection, recovered: dict[int, Recovered]) -> None:
+    """Serve every household through the router. recovered: households whose lanes start right away."""
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     # `docker stop` sends SIGTERM and kills the process after 10 s,
@@ -83,8 +86,7 @@ async def run(config: Config, group: Group, conn: sqlite3.Connection | None,
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
 
-    app = lane = ticker = None
-    serving = False
+    app = router = None
     if config.telegram_bot_token is None:
         log.warning("TELEGRAM_BOT_TOKEN is not set: Telegram is disabled")
     else:
@@ -94,51 +96,26 @@ async def run(config: Config, group: Group, conn: sqlite3.Connection | None,
         me = await app.bot.get_me()
         # The Telegram "/" menu comes from the same list as /help, so the two never drift.
         await app.bot.set_my_commands([BotCommand(name, desc) for name, desc in menu_commands()])
-        outbox = TelegramOutbox(app.bot, lambda old, new: group.record_migration(new))
-        group_id = group.current()
-        if conn is None or group_id is None:
-            log.warning("no household group is registered: setup mode, send /status in the group, "
-                        "then set TELEGRAM_GROUP_ID in .env and restart")
-            lane = Lane(_ignore, outbox)  # the adapter submits nothing in setup mode
-        else:
-            serving = True
-            # Built even when logged out, so /login can start the first login.
-            auth = SwiggyAuth(SecretStore(conn, config.master_key), conn)
-            log.info("swiggy auth: %s", auth.sync_state())  # local only, no Swiggy call
-            llm, missing = None, "OPENAI_API_KEY"
-            if config.openai_api_key and config.agent_model:
-                llm = OpenAILLM(config.openai_api_key, config.agent_model, config.agent_reasoning_effort)
-            else:
-                missing = "AGENT_MODEL" if config.openai_api_key else missing
-                log.warning("%s is not set: free-text messages get a 'not configured' reply", missing)
-            handlers = Handlers(conn, outbox, group, auth, SwiggyClient(auth, config.swiggy_mcp_url),
-                                llm, config.free_delivery_min, missing, config.price_tolerance,
-                                config.upi_app, config.checkout_timeout_s)
-            lane = Lane(handlers.handle, outbox)
-            handlers.resubmit = lane.submit
-        adapter = TelegramAdapter(lane, outbox, group, me.id, me.username)
-        adapter.register(app)
-        lane.start()
+        outbox = TelegramOutbox(app.bot, lambda old, new: router.migrate(old, new))
+        router = LaneRouter(reg, outbox, handlers_factory(config, outbox), household_opener(config.household_db),
+                            idle_s=config.lane_idle_s)
+        TelegramAdapter(router, me.id, me.username).register(app)
+        router.start()
         await app.start()
         await app.updater.start_polling(allowed_updates=ALLOWED_UPDATES, drop_pending_updates=False,
                                         error_callback=PollingErrorLogger(config.telegram_bot_token))
-        if serving:
-            if recovered:  # Telegram and the lane are up: settle what the restart interrupted
-                await lane.submit(Recover(group.current(), tuple(recovered.unknown), tuple(recovered.failed)))
-            ticker = asyncio.create_task(cleanup_ticker(lane, group))
+        for hid, rec in recovered.items():  # Telegram is up: settle what the restart interrupted
+            await router.recover(hid, rec)
 
     # Logged only after polling and the signal handlers exist, so "ready" means a signal is safe.
     log.info("cartmates ready (registry: %s)", config.registry_path)
     await stop.wait()
 
     if app:
-        # Order matters: stop taking new updates first, then let the lane finish the
+        # Order matters: stop taking new updates first, then let each lane finish the
         # event in progress (it still needs the bot to reply), then close the bot.
-        if ticker:
-            ticker.cancel()
-            await asyncio.gather(ticker, return_exceptions=True)
         await app.updater.stop()
-        await lane.stop()
+        await router.stop()
         await app.stop()
         await app.shutdown()
 
@@ -171,26 +148,21 @@ def main() -> int:
 
     reg = registry.open(config.registry_path)
     started = boot_pass(config, reg)
-    if started:
-        first = started[0]
-        if len(started) > 1:
-            log.warning("%d households started, but only household %s is served until M9",
-                        len(started), first.household_id)
-        group, conn, recovered = GroupChat(reg, first.household_id), first.conn, first.recovered
-    else:
-        log.warning("no household is active")
-        group, conn, recovered = FixedGroup(None), None, None
+    # The router opens each household again when its first event comes; only these start at once.
+    recovered = {s.household_id: s.recovered for s in started if s.recovered}
+    for s in started:
+        s.conn.close()
+    if not started:
+        log.warning("no household is active: every group gets the not-set-up reply")
 
     code = 0
     try:
-        asyncio.run(run(config, group, conn, recovered))
+        asyncio.run(run(config, reg, recovered))
     except InvalidToken:
         # A bad token is a config error, not a crash: say so plainly and exit non-zero.
         log.error("Telegram rejected TELEGRAM_BOT_TOKEN; check it in .env (BotFather /token)")
         code = 1
     finally:
-        for s in started:
-            s.conn.close()
         reg.close()
         tracing.shutdown()
     log.info("cartmates stopped")

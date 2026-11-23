@@ -25,6 +25,11 @@ def household_ids(reg: sqlite3.Connection, status: str = "active") -> list[int]:
     return [r[0] for r in reg.execute("SELECT id FROM households WHERE status=? ORDER BY id", (status,))]
 
 
+def status(reg: sqlite3.Connection, household_id: int) -> str | None:
+    row = reg.execute("SELECT status FROM households WHERE id=?", (household_id,)).fetchone()
+    return row[0] if row else None
+
+
 def set_status(reg: sqlite3.Connection, household_id: int, status: str) -> None:
     reg.execute("UPDATE households SET status=? WHERE id=?", (status, household_id))
 

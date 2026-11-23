@@ -11,7 +11,6 @@ from cartmates.agent.llm import ScriptedLLM
 from cartmates.domain import address
 from cartmates.handlers import Handlers
 from cartmates.lane import Lane
-from cartmates.telegram.adapter import TelegramAdapter
 from cartmates.telegram.outbox import FakeOutbox, TelegramOutbox, is_connect_error
 from test_agent import AgentFlow, call, lines, rig, run, say, use  # noqa: F401 (rig is a fixture)
 from test_swiggy import Rig
@@ -91,8 +90,8 @@ def test_a_question_send_that_fails_once_goes_out_on_retry(rig):
         lane = Lane(h.handle, outbox)
         lane.start()
         from test_agent import MENTION
-        from test_telegram import make_update
-        await TelegramAdapter(lane, outbox, GROUP, BOT_ID, BOT_NAME).on_update(
+        from test_telegram import adapter_for, make_update
+        await adapter_for(lane).on_update(
             make_update("@CartMatesBot diet coke, salt and some milk", entities=MENTION))
         await asyncio.sleep(0.3)
         await lane.stop()
