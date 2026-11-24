@@ -45,3 +45,21 @@ def test_a_second_group_gets_a_new_household(tmp_path):
     first = int(admin(tmp_path, "add-household", str(CHAT)).stdout)
     second = admin(tmp_path, "add-household", "-100777")
     assert second.returncode == 0 and int(second.stdout) == first + 1
+
+
+def test_a_positive_chat_id_is_refused_and_nothing_is_created(tmp_path):
+    done = admin(tmp_path, "add-household", "5160608902")
+    assert done.returncode == 1 and done.stdout == ""
+    assert done.stderr.startswith("refused:") and "-5160608902" in done.stderr
+    assert not (tmp_path / "registry.db").exists()
+    assert not (tmp_path / "households").exists()
+
+
+def test_main_accepts_a_negative_positional(tmp_path, monkeypatch, capsys):
+    from cartmates import admin as admin_mod
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    assert admin_mod.main(["add-household", "-100123"]) == 0
+    hid = int(capsys.readouterr().out.strip())
+    reg = registry.open(tmp_path / "registry.db")
+    assert registry.household_for(reg, -100123) == hid
+    reg.close()

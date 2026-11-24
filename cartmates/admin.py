@@ -16,7 +16,10 @@ from cartmates.switch import DONE_KEY
 
 def add_household(config: Config, chat_id: int) -> int:
     """DESIGN 17.8.1: a new household with its own migrated file, reached from chat_id. Returns its id.
-    Raises ValueError if the chat already reaches a household."""
+    Raises ValueError if chat_id isn't negative or the chat already reaches a household."""
+    if chat_id >= 0:
+        raise ValueError(f"chat id {chat_id} is not a group id: group ids are negative. "
+                         f"Was the minus sign dropped? Did you mean -{abs(chat_id)}?")
     config.households_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(config.households_dir, 0o700)
     reg = registry.open(config.registry_path)
