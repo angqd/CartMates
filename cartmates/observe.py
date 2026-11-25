@@ -32,6 +32,16 @@ def current_trace_id() -> str | None:
     return format(ctx.trace_id, "032x") if ctx.is_valid else None
 
 
-def looks_like_paste(text: str) -> bool:
-    """A pasted Swiggy login redirect URL: it holds the auth code and must never be stored or traced."""
+def looks_like_callback_paste(text: str) -> bool:
+    """A pasted Swiggy login redirect URL: it holds the auth code."""
     return "/callback?" in text and "code=" in text
+
+
+def looks_like_wrong_paste(text: str) -> bool:
+    """The Swiggy sign-in page pasted instead of the final redirect URL."""
+    return "mcp.swiggy.com/auth" in text and not looks_like_callback_paste(text)
+
+
+def looks_like_paste(text: str) -> bool:
+    """Any pasted login URL. It must never be stored or traced."""
+    return looks_like_callback_paste(text) or looks_like_wrong_paste(text)

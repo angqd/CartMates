@@ -67,6 +67,13 @@ def _address_label(a: dict) -> str:
     return a.get("addressTag") or a.get("addressCategory") or "Address"
 
 
+WRONG_PASTE = (
+    "That's the Swiggy sign-in page, not the final link. Telegram's own browser hides the page you need. "
+    "Send /login again, then open the link in Safari or Chrome instead: long-press it and choose Open in… "
+    "Log in, and when the page fails to load, copy its address and send it here.\n"
+    "Or do the login on a computer: open the link there, and paste the address of the page that fails to load."
+)
+
 _looks_like_paste = observe.looks_like_paste  # shared with tracing, which must never record a paste
 
 
@@ -117,7 +124,9 @@ class Handlers:
         turn = self.swiggy.turn() if self.swiggy else nullcontext()
         async with turn:
             try:
-                if paste:
+                if paste and observe.looks_like_wrong_paste(event.text):
+                    text = WRONG_PASTE
+                elif paste:
                     login = self._pending_login()
                     if not login:
                         text = "No login is waiting (or it expired). Send /login to start one."
