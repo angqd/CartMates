@@ -419,7 +419,12 @@ def test_address_while_logged_out_is_parked_then_replayed_after_paste(rig):
         async with Flow(rig) as f:
             await f.say(command("/address", message_id=20))
             assert "I need a Swiggy login first" in f.texts()[1]
-            assert f.texts()[0].startswith("Swiggy login:\n1) open https://mcp.swiggy.com/auth/authorize?")
+            first = f.outbox.sent[0]
+            assert first.html  # sent as HTML so the <code> tag works
+            assert first.text.startswith("Swiggy login:\n1) Copy this link (tap it to copy) and open it in Safari or Chrome, not inside Telegram:\n"
+                                         "<code>https://mcp.swiggy.com/auth/authorize?")
+            assert "&amp;" in first.text and "&" not in first.text.replace("&amp;", "").replace("&#x27;", "")
+            assert "</code>\n2) Log in with OTP." in first.text
             login = pending_login(rig.conn)
             assert [m["text"] for m in login["parked"]] == ["/address"]
 

@@ -313,3 +313,20 @@ def test_outbox_migration_callback_gets_old_and_new_ids():
     got = []
     asyncio.run(TelegramOutbox(Bot(), lambda old, new: got.append((old, new))).send(GROUP, "hi"))
     assert got == [(GROUP, -1009)]
+
+
+def test_send_with_html_uses_html_parse_mode_and_keeps_links_out_of_the_span(spans):
+    seen = {}
+
+    class Bot:
+        async def send_message(self, chat, body, **k):
+            seen.update(k, body=body)
+
+            class R:
+                message_id = 5
+            return R()
+
+    asyncio.run(TelegramOutbox(Bot()).send(GROUP, "<code>https://x?a=1&amp;b=2</code>", html=True))
+    assert seen["parse_mode"] == "HTML" and seen["body"].startswith("<code>")
+    (sp,) = spans.get_finished_spans()
+    assert "output.value" not in sp.attributes

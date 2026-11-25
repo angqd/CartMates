@@ -58,7 +58,7 @@ Buttons = list[list[Button]]
 class Outbox(Protocol):
     async def send(self, chat_id: int, text: str, reply_to: int | None = None,
                    buttons: Buttons | None = None, mentions: list[Mention] | None = None,
-                   follow_migration: bool = True) -> int | None: ...
+                   follow_migration: bool = True, html: bool = False) -> int | None: ...
     async def edit(self, chat_id: int, message_id: int, text: str,
                    buttons: Buttons | None = None) -> None: ...
     async def answer_tap(self, tap_id: str, text: str | None = None, alert: bool = False) -> None: ...
@@ -121,8 +121,8 @@ class TelegramOutbox:
 
     async def send(self, chat_id: int, text: str, reply_to: int | None = None,
                    buttons: Buttons | None = None, mentions: list[Mention] | None = None,
-                   follow_migration: bool = True) -> int | None:
-        body, mode = (_with_mentions(text, mentions), "HTML") if mentions else (text, None)
+                   follow_migration: bool = True, html: bool = False) -> int | None:
+        body, mode = (_with_mentions(text, mentions), "HTML") if mentions else (text, "HTML" if html else None)
 
         async def attempt(chat: int) -> int:
             async def once() -> int:
@@ -178,6 +178,7 @@ class Sent:
     reply_to: int | None
     buttons: Buttons | None = None
     mentions: list[Mention] | None = None
+    html: bool = False
 
 
 class FakeOutbox:
@@ -200,8 +201,8 @@ class FakeOutbox:
 
     async def send(self, chat_id: int, text: str, reply_to: int | None = None,
                    buttons: Buttons | None = None, mentions: list[Mention] | None = None,
-                   follow_migration: bool = True) -> int | None:
-        attempt = Sent(chat_id, text, reply_to, buttons, mentions)
+                   follow_migration: bool = True, html: bool = False) -> int | None:
+        attempt = Sent(chat_id, text, reply_to, buttons, mentions, html)
         for failure in self._failures:
             when, exc, left = failure
             if left != 0 and when(attempt):
