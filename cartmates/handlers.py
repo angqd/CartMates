@@ -1,4 +1,3 @@
-import html
 import json
 import logging
 import re
@@ -68,9 +67,18 @@ def _address_label(a: dict) -> str:
     return a.get("addressTag") or a.get("addressCategory") or "Address"
 
 
+LOGIN_STEPS = (
+    "Swiggy login:\n"
+    "1) Long-press the link in the next message, copy it, and open it in Safari or Chrome, not inside Telegram.\n"
+    "2) Log in with OTP.\n"
+    "3) The last page won't load. That's expected. Copy its full address.\n"
+    "4) Send that address here within 2 minutes.\n"
+    "On a computer, just click the link and do the same."
+)
+
 WRONG_PASTE = (
     "That's the Swiggy sign-in page, not the final link. Telegram's own browser hides the page you need. "
-    "Send /login again, tap the link to copy it, and open it in Safari or Chrome instead. "
+    "Send /login again, long-press the link to copy it, and open it in Safari or Chrome instead. "
     "Log in, and when the page fails to load, copy its address and send it here.\n"
     "Or do the login on a computer: open the link there, and paste the address of the page that fails to load."
 )
@@ -564,8 +572,7 @@ class Handlers:
         if self.auth.logged_in():
             return "Already logged in to Swiggy."
         login = self._pending_login() or await self._create_login(event.user_id)
-        await self.outbox.send(event.chat_id, self._instructions(login["payload"]["url"]),
-                               reply_to=event.message_id, html=True)
+        await self._post_login(event.chat_id, login["payload"]["url"], reply_to=event.message_id)
         return None
 
     async def _create_login(self, user_id: int) -> dict:
@@ -578,17 +585,10 @@ class Handlers:
         )
         return {"id": cur.lastrowid, "payload": payload}
 
-    @staticmethod
-    def _instructions(url: str) -> str:
-        """The login message as HTML (send it with html=True). The link sits in <code> so tapping it copies it."""
-        e = html.escape
-        return (e("Swiggy login:\n"
-                  "1) Copy this link (tap it to copy) and open it in Safari or Chrome, not inside Telegram:\n")
-                + f"<code>{e(url)}</code>\n"
-                + e("2) Log in with OTP.\n"
-                    "3) The last page won't load. That's expected. Copy its full address.\n"
-                    "4) Reply to this message with that address within 2 minutes.\n"
-                    "On a computer, just open the link there and do the same."))
+    async def _post_login(self, chat_id: int, url: str, reply_to: int | None = None) -> None:
+        """Two plain messages: the steps, then the bare link so Telegram makes it a normal, long-pressable link."""
+        await self.outbox.send(chat_id, LOGIN_STEPS, reply_to=reply_to)
+        await self.outbox.send(chat_id, url)
 
     async def _login_ready(self, event: Message) -> tuple[dict, bool]:
         """The pending login, created if there is none. True when it is new (its link still has to be posted)."""
@@ -603,7 +603,7 @@ class Handlers:
         try:
             login, fresh = await self._login_ready(event)
             if fresh:
-                await self.outbox.send(event.chat_id, self._instructions(login["payload"]["url"]), html=True)
+                await self._post_login(event.chat_id, login["payload"]["url"])
         except SwiggyUnavailable:
             pass  # still tell them what was done; /login will retry the link
         return ("Swiggy logged out partway. I already did: " + "; ".join(actions)
@@ -616,7 +616,7 @@ class Handlers:
         self.conn.execute("UPDATE pending SET payload_json=? WHERE id=?",
                           (json.dumps(login["payload"]), login["id"]))
         if fresh:
-            await self.outbox.send(event.chat_id, self._instructions(login["payload"]["url"]), html=True)
+            await self._post_login(event.chat_id, login["payload"]["url"])
         await self.outbox.send(event.chat_id, PARKED_REPLY, reply_to=event.message_id)
 
     async def _finish_login(self, event: Message, login: dict) -> None:

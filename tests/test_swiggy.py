@@ -13,7 +13,7 @@ import pytest
 from cryptography.fernet import Fernet
 
 from cartmates.domain import address
-from cartmates.handlers import Handlers
+from cartmates.handlers import LOGIN_STEPS, Handlers
 from cartmates.lane import Lane
 from cartmates.store import db
 from cartmates.store.secrets import SecretStore
@@ -418,13 +418,11 @@ def test_address_while_logged_out_is_parked_then_replayed_after_paste(rig):
     async def go():
         async with Flow(rig) as f:
             await f.say(command("/address", message_id=20))
-            assert "I need a Swiggy login first" in f.texts()[1]
-            first = f.outbox.sent[0]
-            assert first.html  # sent as HTML so the <code> tag works
-            assert first.text.startswith("Swiggy login:\n1) Copy this link (tap it to copy) and open it in Safari or Chrome, not inside Telegram:\n"
-                                         "<code>https://mcp.swiggy.com/auth/authorize?")
-            assert "&amp;" in first.text and "&" not in first.text.replace("&amp;", "").replace("&#x27;", "")
-            assert "</code>\n2) Log in with OTP." in first.text
+            steps, link, parked = f.outbox.sent[:3]
+            assert not steps.html and not link.html
+            assert steps.text == LOGIN_STEPS and "<" not in steps.text and "http" not in steps.text
+            assert link.text.startswith("https://mcp.swiggy.com/auth/authorize?") and " " not in link.text
+            assert "I need a Swiggy login first" in parked.text
             login = pending_login(rig.conn)
             assert [m["text"] for m in login["parked"]] == ["/address"]
 
@@ -433,10 +431,10 @@ def test_address_while_logged_out_is_parked_then_replayed_after_paste(rig):
             return f
     f = asyncio.run(go())
     texts = f.texts()
-    assert texts[2] == "Logged in to Swiggy ✅ (by Rohan)"
-    assert texts[3].startswith("Delivery address: Flat 12")
-    assert [b[0][0] for b in f.outbox.sent[3].buttons] == ["Office", "✓ Flat 12"]
-    assert f.outbox.sent[3].reply_to == 20  # the replay answers the original message
+    assert texts[3] == "Logged in to Swiggy ✅ (by Rohan)"
+    assert texts[4].startswith("Delivery address: Flat 12")
+    assert [b[0][0] for b in f.outbox.sent[4].buttons] == ["Office", "✓ Flat 12"]
+    assert f.outbox.sent[4].reply_to == 20  # the replay answers the original message
     assert f.outbox.deleted == [(GROUP, 21)]
     assert pending_login(rig.conn) is None
     assert kv(rig.conn, "auth_state") == "logged_in"
@@ -489,9 +487,12 @@ def test_repeat_login_resends_the_same_link_and_logged_in_says_so(rig):
             await f.say(command("/login", message_id=12))
             return f
     f = asyncio.run(go())
-    assert f.texts()[0] == f.texts()[1]
+    t = f.texts()
+    assert t[:2] == [LOGIN_STEPS, t[1]] and t[2:4] == t[:2]  # same steps, same link, resent
+    assert t[1].startswith("https://")
+    assert not any(m.html for m in f.outbox.sent)
     assert rig.conn.execute("SELECT count(*) FROM pending").fetchone()[0] == 1
-    assert f.texts()[2] == "Already logged in to Swiggy."
+    assert t[4] == "Already logged in to Swiggy."
     assert len(rig.server.of("register")) == 1
 
 
